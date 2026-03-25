@@ -760,6 +760,29 @@ select {
 .geocode-status.error { background: rgba(192,57,43,0.12); color: #e74c3c; border: 1px solid rgba(192,57,43,0.3); }
 .geocode-status.loading { background: rgba(232,160,32,0.1); color: var(--accent); border: 1px solid rgba(232,160,32,0.2); }
 
+.manual-coords-copy {
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.manual-coords-grid {
+  margin-top: 8px;
+}
+
+.manual-coords-error {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: rgba(192,57,43,0.12);
+  color: #e74c3c;
+  border: 1px solid rgba(192,57,43,0.3);
+  font-size: 12px;
+}
+
+.manual-coords-error.hidden {
+  display: none;
+}
+
 /* ── Scrollbars ──────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }

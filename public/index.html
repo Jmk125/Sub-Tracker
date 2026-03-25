@@ -193,6 +193,32 @@
     </div>
   </div>
 
+  <!-- Manual coordinates -->
+  <div id="manualCoordsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box modal-sm">
+      <div class="modal-header">
+        <h2>Add Coordinates Manually</h2>
+        <button class="modal-close" id="manualCoordsClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="manual-coords-copy" id="manualCoordsReason">Unable to geocode this address.</p>
+        <p class="manual-coords-copy">
+          Tip: In Google Maps, right-click the location and copy the latitude/longitude.
+        </p>
+        <div class="form-group manual-coords-grid">
+          <label>Coordinates (Lat, Lng)</label>
+          <input type="text" id="fManualCoords" placeholder="e.g. 39.9612, -82.9988" />
+        </div>
+        <div id="manualCoordsError" class="manual-coords-error hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="manualCoordsCancel">Cancel</button>
+        <button class="btn btn-primary" id="manualCoordsSave">Save Coordinates</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://unpkg.com/topojson-client@3/dist/topojson-client.min.js"></script>
   <script src="/js/app.js"></script>
