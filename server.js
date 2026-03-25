@@ -3,9 +3,12 @@ const Datastore = require('nedb');
 const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 
 const app = express();
-const PORT = 3007;
+const PORT = parseInt(process.env.PORT || '3007', 10);
+const HTTPS_PORT = parseInt(process.env.HTTPS_PORT || '3443', 10);
 
 // Ensure data directory exists
 if (!fs.existsSync('./data')) fs.mkdirSync('./data');
@@ -205,6 +208,34 @@ app.post('/api/subcontractors/:id/geocode', async (req, res) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Sub Tracker running at http://localhost:${PORT}`);
-});
+function startServers() {
+  const certPath = process.env.SSL_CERT_PATH || path.join(__dirname, 'certs', 'localhost.crt');
+  const keyPath = process.env.SSL_KEY_PATH || path.join(__dirname, 'certs', 'localhost.key');
+
+  if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+    const credentials = {
+      cert: fs.readFileSync(certPath),
+      key: fs.readFileSync(keyPath),
+    };
+
+    https.createServer(credentials, app).listen(HTTPS_PORT, '0.0.0.0', () => {
+      console.log(`Sub Tracker running at https://localhost:${HTTPS_PORT}`);
+    });
+
+    http.createServer((req, res) => {
+      const host = req.headers.host ? req.headers.host.split(':')[0] : 'localhost';
+      res.writeHead(301, { Location: `https://${host}:${HTTPS_PORT}${req.url}` });
+      res.end();
+    }).listen(PORT, '0.0.0.0', () => {
+      console.log(`HTTP redirect enabled at http://localhost:${PORT} -> https://localhost:${HTTPS_PORT}`);
+    });
+    return;
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Sub Tracker running at http://localhost:${PORT}`);
+    console.log(`HTTPS not enabled. Add cert/key at ${certPath} and ${keyPath} (or set SSL_CERT_PATH/SSL_KEY_PATH).`);
+  });
+}
+
+startServers();
