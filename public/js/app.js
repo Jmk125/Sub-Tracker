@@ -15,6 +15,7 @@ const state = {
   mapZoom: null,
   mapSvg: null,
   mapG: null,
+  manualCoordsId: null,
 };
 
 // Division color palette (for map pins)
@@ -237,6 +238,8 @@ function setupModal() {
   document.getElementById('modalSave').addEventListener('click', saveModal);
   document.getElementById('btnAddDivisionRow').addEventListener('click', () => addDivisionRow());
   document.getElementById('btnPasteAddress').addEventListener('click', pasteAddressFromClipboard);
+  setupPhoneFormatting();
+  setupManualCoordsModal();
 }
 
 function openAddModal() {
@@ -260,7 +263,7 @@ function openEditModal(id) {
   document.getElementById('fState').value = sub.state || 'OH';
   document.getElementById('fZip').value = sub.zip || '';
   document.getElementById('fContactName').value = sub.contact_name || '';
-  document.getElementById('fContactPhone').value = sub.contact_phone || '';
+  document.getElementById('fContactPhone').value = formatPhoneInput(sub.contact_phone || '');
   document.getElementById('fContactEmail').value = sub.contact_email || '';
   document.getElementById('fNotes').value = sub.notes || '';
   hideGeoStatus();
@@ -312,18 +315,46 @@ async function saveModal() {
   document.getElementById('modalSave').disabled = true;
 
   try {
+    let savedDoc;
     if (state.editingId) {
-      await api('PUT', `/api/subcontractors/${state.editingId}`, payload);
+      savedDoc = await api('PUT', `/api/subcontractors/${state.editingId}`, payload);
     } else {
-      await api('POST', '/api/subcontractors', payload);
+      savedDoc = await api('POST', '/api/subcontractors', payload);
     }
     await loadSubs();
     closeModal();
+    if (savedDoc && !(savedDoc.lat && savedDoc.lng)) {
+      openManualCoordsModal(savedDoc._id, {
+        reason: 'We could not geocode that address.',
+      });
+    }
   } catch (e) {
     setGeoStatus('error', '❌ ' + e.message);
   } finally {
     document.getElementById('modalSave').disabled = false;
   }
+}
+
+function setupPhoneFormatting() {
+  const phoneInput = document.getElementById('fContactPhone');
+  if (!phoneInput) return;
+
+  phoneInput.addEventListener('input', () => {
+    phoneInput.value = formatPhoneInput(phoneInput.value);
+  });
+
+  phoneInput.addEventListener('paste', () => {
+    setTimeout(() => {
+      phoneInput.value = formatPhoneInput(phoneInput.value);
+    }, 0);
+  });
+}
+
+function formatPhoneInput(value) {
+  const digits = (value || '').replace(/\D/g, '').slice(0, 10);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)})${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)})${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
 function addDivisionRow(value = '') {
@@ -497,10 +528,63 @@ function openConfirm(id) {
 // ── Retry Geocode ──────────────────────────────────────────
 async function retryGeocode(id) {
   try {
-    await api('POST', `/api/subcontractors/${id}/geocode`);
+    const result = await api('POST', `/api/subcontractors/${id}/geocode`);
     await loadSubs();
+    if (!(result.lat && result.lng)) {
+      openManualCoordsModal(id, { reason: 'Geocoding did not return coordinates.' });
+    }
   } catch (e) {
-    alert('Could not geocode: ' + e.message);
+    openManualCoordsModal(id, { reason: `Could not geocode this address (${e.message}).` });
+  }
+}
+
+function setupManualCoordsModal() {
+  const modal = document.getElementById('manualCoordsModal');
+  modal.querySelector('.modal-backdrop').addEventListener('click', closeManualCoordsModal);
+  document.getElementById('manualCoordsClose').addEventListener('click', closeManualCoordsModal);
+  document.getElementById('manualCoordsCancel').addEventListener('click', closeManualCoordsModal);
+  document.getElementById('manualCoordsSave').addEventListener('click', saveManualCoords);
+}
+
+function openManualCoordsModal(subId, options = {}) {
+  state.manualCoordsId = subId;
+  document.getElementById('manualCoordsReason').textContent = options.reason || 'Unable to geocode this address.';
+  document.getElementById('fManualLat').value = '';
+  document.getElementById('fManualLng').value = '';
+  document.getElementById('manualCoordsError').classList.add('hidden');
+  document.getElementById('manualCoordsModal').classList.remove('hidden');
+  document.getElementById('fManualLat').focus();
+}
+
+function closeManualCoordsModal() {
+  document.getElementById('manualCoordsModal').classList.add('hidden');
+  state.manualCoordsId = null;
+}
+
+async function saveManualCoords() {
+  if (!state.manualCoordsId) return;
+  const latVal = document.getElementById('fManualLat').value.trim();
+  const lngVal = document.getElementById('fManualLng').value.trim();
+  const lat = parseFloat(latVal);
+  const lng = parseFloat(lngVal);
+  const errorEl = document.getElementById('manualCoordsError');
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    errorEl.textContent = 'Enter valid coordinates (lat between -90 and 90, lng between -180 and 180).';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  document.getElementById('manualCoordsSave').disabled = true;
+  try {
+    await api('PUT', `/api/subcontractors/${state.manualCoordsId}`, { lat, lng });
+    await loadSubs();
+    closeManualCoordsModal();
+  } catch (e) {
+    errorEl.textContent = e.message || 'Could not save coordinates.';
+    errorEl.classList.remove('hidden');
+  } finally {
+    document.getElementById('manualCoordsSave').disabled = false;
   }
 }
 
