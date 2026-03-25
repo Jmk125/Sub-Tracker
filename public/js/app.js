@@ -376,32 +376,52 @@ async function pasteAddressFromClipboard() {
   clearAddressFieldHighlights();
   try {
     const text = await navigator.clipboard.readText();
-    const parsed = parseAddressText(text);
-    if (!parsed) {
-      setGeoStatus('error', '❌ Could not parse that address. Please paste manually.');
+    applyParsedAddress(text);
+  } catch (e) {
+    const manualPaste = window.prompt(
+      'Clipboard access is blocked in this browser context.\nPaste the full address here and press OK:',
+      ''
+    );
+    if (manualPaste && manualPaste.trim()) {
+      applyParsedAddress(manualPaste);
       return;
     }
-
-    document.getElementById('fAddress').value = parsed.address || '';
-    document.getElementById('fCity').value = parsed.city || '';
-    document.getElementById('fState').value = parsed.state || 'OH';
-    document.getElementById('fZip').value = parsed.zip || '';
-
-    const missing = [];
-    if (!parsed.address) missing.push('fAddress');
-    if (!parsed.city) missing.push('fCity');
-    if (!parsed.state) missing.push('fState');
-    if (!parsed.zip) missing.push('fZip');
-
-    if (missing.length) {
-      missing.forEach(id => document.getElementById(id).classList.add('field-missing'));
-      setGeoStatus('error', `⚠ Address pasted, but missing: ${missing.map(id => id.replace('f', '')).join(', ')}.`);
-    } else {
-      setGeoStatus('ok', '✅ Address pasted into all fields.');
-    }
-  } catch (e) {
-    setGeoStatus('error', '❌ Clipboard access blocked. Allow clipboard permission and try again.');
+    setGeoStatus('error', `❌ Clipboard blocked. ${getClipboardHelpText()}`);
   }
+}
+
+function applyParsedAddress(rawAddressText) {
+  const parsed = parseAddressText(rawAddressText);
+  if (!parsed) {
+    setGeoStatus('error', '❌ Could not parse that address. Please paste manually.');
+    return;
+  }
+
+  document.getElementById('fAddress').value = parsed.address || '';
+  document.getElementById('fCity').value = parsed.city || '';
+  document.getElementById('fState').value = parsed.state || 'OH';
+  document.getElementById('fZip').value = parsed.zip || '';
+
+  const missing = [];
+  if (!parsed.address) missing.push('fAddress');
+  if (!parsed.city) missing.push('fCity');
+  if (!parsed.state) missing.push('fState');
+  if (!parsed.zip) missing.push('fZip');
+
+  if (missing.length) {
+    missing.forEach(id => document.getElementById(id).classList.add('field-missing'));
+    setGeoStatus('error', `⚠ Address pasted, but missing: ${missing.map(id => id.replace('f', '')).join(', ')}.`);
+  } else {
+    setGeoStatus('ok', '✅ Address pasted into all fields.');
+  }
+}
+
+function getClipboardHelpText() {
+  const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  if (window.location.protocol !== 'https:' && !isLocalhost) {
+    return 'Use HTTPS (or localhost) and enable site clipboard permissions in your browser settings.';
+  }
+  return 'Enable clipboard permissions for this site in your browser settings, then refresh.';
 }
 
 function parseAddressText(text) {
