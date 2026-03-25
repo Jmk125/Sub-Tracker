@@ -71,7 +71,7 @@ app.get('/api/subcontractors', (req, res) => {
 
 // ─── API: Add subcontractor ──────────────────────────────────────────────────
 app.post('/api/subcontractors', async (req, res) => {
-  const { company_name, address, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, notes } = req.body;
+  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, notes } = req.body;
   const normalizedDivisionNums = [...new Set((Array.isArray(division_nums) ? division_nums : [division_num]).filter(Boolean))];
   const primaryDivisionNum = normalizedDivisionNums[0];
 
@@ -106,6 +106,7 @@ app.post('/api/subcontractors', async (req, res) => {
   const doc = {
     company_name,
     address,
+    website: website || '',
     city,
     state: state || 'OH',
     zip,
