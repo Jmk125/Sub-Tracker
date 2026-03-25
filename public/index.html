@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sub Tracker — Columbus Market</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div class="header-inner">
+        <div class="header-left">
+          <span class="logo-tag">CMR</span>
+          <div class="header-titles">
+            <h1>Sub Tracker</h1>
+            <span class="subtitle">Columbus Market Intelligence</span>
+          </div>
+        </div>
+        <div class="header-controls">
+          <div class="filter-bar">
+            <label>Division Filter</label>
+            <select id="globalDivisionFilter">
+              <option value="all">All Divisions</option>
+            </select>
+          </div>
+          <button id="btnAddSub" class="btn btn-primary">+ Add Subcontractor</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Tab Bar -->
+    <nav id="tabs">
+      <button class="tab active" data-tab="list">
+        <span class="tab-icon">☰</span> Subcontractors
+        <span id="subCount" class="tab-badge">0</span>
+      </button>
+      <button class="tab" data-tab="map">
+        <span class="tab-icon">◉</span> Ohio Map
+      </button>
+    </nav>
+
+    <!-- List Tab -->
+    <div id="tab-list" class="tab-content active">
+      <div class="list-toolbar">
+        <div class="search-wrap">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="searchInput" placeholder="Search by name, city, contact..." />
+        </div>
+        <div class="sort-controls">
+          <label>Sort by</label>
+          <select id="sortField">
+            <option value="company_name">Company Name</option>
+            <option value="division_num">Division</option>
+            <option value="city">City</option>
+            <option value="created_at">Date Added</option>
+          </select>
+          <button id="sortDir" class="btn btn-icon" title="Toggle sort direction">↑</button>
+        </div>
+      </div>
+
+      <div id="subList" class="sub-list">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">🏗</div>
+          <p>No subcontractors yet.</p>
+          <p class="empty-sub">Click <strong>+ Add Subcontractor</strong> to start building your Columbus market database.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map Tab -->
+    <div id="tab-map" class="tab-content">
+      <div class="map-container">
+        <div id="map-sidebar">
+          <div class="map-stats">
+            <div class="stat-box">
+              <span class="stat-num" id="mapSubCount">0</span>
+              <span class="stat-label">Subs Shown</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num" id="mapCountyCount">0</span>
+              <span class="stat-label">Counties</span>
+            </div>
+          </div>
+          <div class="map-legend">
+            <h3>Legend</h3>
+            <div id="legendItems"></div>
+          </div>
+          <div class="map-pin-list">
+            <h3>Pins</h3>
+            <div id="mapPinList"></div>
+          </div>
+        </div>
+        <div id="map-area">
+          <div class="map-controls">
+            <button id="btnZoomIn" class="map-btn">+</button>
+            <button id="btnZoomOut" class="map-btn">−</button>
+            <button id="btnResetZoom" class="map-btn" title="Reset view">⌖</button>
+          </div>
+          <svg id="ohioMap"></svg>
+          <div id="mapTooltip" class="map-tooltip"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add Subcontractor</h2>
+        <button class="modal-close" id="modalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Company Name <span class="req">*</span></label>
+            <input type="text" id="fCompanyName" placeholder="e.g. Apex Electrical LLC" />
+          </div>
+          <div class="form-group full">
+            <label>Division <span class="req">*</span></label>
+            <select id="fDivision"></select>
+          </div>
+          <div class="form-group full">
+            <label>Street Address</label>
+            <input type="text" id="fAddress" placeholder="123 Main St" />
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" id="fCity" placeholder="Columbus" />
+          </div>
+          <div class="form-group">
+            <label>State</label>
+            <input type="text" id="fState" placeholder="OH" maxlength="2" value="OH" />
+          </div>
+          <div class="form-group">
+            <label>ZIP</label>
+            <input type="text" id="fZip" placeholder="43215" maxlength="10" />
+          </div>
+          <div class="section-divider full"><span>Contact</span></div>
+          <div class="form-group full">
+            <label>Contact Name</label>
+            <input type="text" id="fContactName" placeholder="John Smith" />
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" id="fContactPhone" placeholder="(614) 555-0100" />
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="fContactEmail" placeholder="john@apexelec.com" />
+          </div>
+          <div class="form-group full">
+            <label>Notes</label>
+            <textarea id="fNotes" rows="3" placeholder="Relationship status, capabilities, notes..."></textarea>
+          </div>
+        </div>
+        <div id="geocodeStatus" class="geocode-status hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+        <button class="btn btn-primary" id="modalSave">Save Subcontractor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirm -->
+  <div id="confirmModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box modal-sm">
+      <div class="modal-header">
+        <h2>Delete Subcontractor?</h2>
+      </div>
+      <div class="modal-body">
+        <p id="confirmMsg">Are you sure you want to delete this subcontractor? This cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
+        <button class="btn btn-danger" id="confirmDelete">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/topojson-client@3/dist/topojson-client.min.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
