@@ -258,7 +258,7 @@ function openEditModal(id) {
   document.getElementById('fCompanyName').value = sub.company_name || '';
   setDivisionSelections(getSubDivisionNums(sub));
   document.getElementById('fAddress').value = sub.address || '';
-  document.getElementById('fWebsite').value = sub.website || '';
+  document.getElementById('fWebsite').value = cleanWebsiteValue(sub.website || '');
   document.getElementById('fCity').value = sub.city || '';
   document.getElementById('fState').value = sub.state || 'OH';
   document.getElementById('fZip').value = sub.zip || '';
@@ -301,7 +301,7 @@ async function saveModal() {
     division_num,
     division_nums,
     address: document.getElementById('fAddress').value.trim(),
-    website: document.getElementById('fWebsite').value.trim(),
+    website: cleanWebsiteValue(document.getElementById('fWebsite').value),
     city: document.getElementById('fCity').value.trim(),
     state: document.getElementById('fState').value.trim() || 'OH',
     zip: document.getElementById('fZip').value.trim(),
@@ -348,6 +348,11 @@ function setupPhoneFormatting() {
       phoneInput.value = formatPhoneInput(phoneInput.value);
     }, 0);
   });
+}
+
+function cleanWebsiteValue(value) {
+  if (!value) return '';
+  return String(value).trim().replace(/\s+/g, '');
 }
 
 function formatPhoneInput(value) {
