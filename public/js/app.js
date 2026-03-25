@@ -176,6 +176,10 @@ function renderList() {
     card.style.borderLeftColor = color;
 
     const addr = [sub.address, sub.city, sub.state, sub.zip].filter(Boolean).join(', ');
+    const websiteUrl = normalizeWebsite(sub.website);
+    const websiteHtml = websiteUrl
+      ? `<span>🌐 <a href="${escAttr(websiteUrl)}" target="_blank" rel="noopener noreferrer">${escHtml(sub.website)}</a></span>`
+      : '';
     const geoHtml = sub.lat
       ? `<span class="geo-indicator geo-ok">📍 Mapped</span>`
       : `<span class="geo-indicator geo-missing" data-id="${sub._id}" title="Click to retry geocoding">⚠ No Coords</span>`;
@@ -191,6 +195,7 @@ function renderList() {
         <div class="sub-meta">
           ${renderDivisionBadges(sub)}
           ${addr ? `<span>📍 ${escHtml(addr)}</span>` : ''}
+          ${websiteHtml}
         </div>
         ${contactParts.length ? `<div class="sub-contact">👤 ${contactParts.join(' · ')}</div>` : ''}
         ${sub.notes ? `<div class="sub-notes">${escHtml(sub.notes)}</div>` : ''}
@@ -250,6 +255,7 @@ function openEditModal(id) {
   document.getElementById('fCompanyName').value = sub.company_name || '';
   setDivisionSelections(getSubDivisionNums(sub));
   document.getElementById('fAddress').value = sub.address || '';
+  document.getElementById('fWebsite').value = sub.website || '';
   document.getElementById('fCity').value = sub.city || '';
   document.getElementById('fState').value = sub.state || 'OH';
   document.getElementById('fZip').value = sub.zip || '';
@@ -262,7 +268,7 @@ function openEditModal(id) {
 }
 
 function clearForm() {
-  ['fCompanyName','fAddress','fCity','fContactName','fContactPhone','fContactEmail','fNotes'].forEach(id => {
+  ['fCompanyName','fAddress','fWebsite','fCity','fContactName','fContactPhone','fContactEmail','fNotes'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('fState').value = 'OH';
@@ -292,6 +298,7 @@ async function saveModal() {
     division_num,
     division_nums,
     address: document.getElementById('fAddress').value.trim(),
+    website: document.getElementById('fWebsite').value.trim(),
     city: document.getElementById('fCity').value.trim(),
     state: document.getElementById('fState').value.trim() || 'OH',
     zip: document.getElementById('fZip').value.trim(),
@@ -751,6 +758,18 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function escAttr(str) {
+  return escHtml(str).replace(/'/g, '&#39;');
+}
+
+function normalizeWebsite(rawWebsite) {
+  if (!rawWebsite) return '';
+  const trimmed = String(rawWebsite).trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
 }
 
 // ── Boot ───────────────────────────────────────────────────
