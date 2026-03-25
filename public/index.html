@@ -122,11 +122,15 @@
             <input type="text" id="fCompanyName" placeholder="e.g. Apex Electrical LLC" />
           </div>
           <div class="form-group full">
-            <label>Division <span class="req">*</span></label>
-            <select id="fDivision"></select>
+            <label>Division(s) <span class="req">*</span></label>
+            <div id="divisionRows" class="division-rows"></div>
+            <button type="button" id="btnAddDivisionRow" class="btn btn-ghost btn-sm btn-inline">+ Add Division</button>
           </div>
           <div class="form-group full">
-            <label>Street Address</label>
+            <label class="label-row">
+              <span>Street Address</span>
+              <button type="button" id="btnPasteAddress" class="btn btn-ghost btn-sm btn-inline" title="Paste and parse copied address">📋 Paste Address</button>
+            </label>
             <input type="text" id="fAddress" placeholder="123 Main St" />
           </div>
           <div class="form-group">

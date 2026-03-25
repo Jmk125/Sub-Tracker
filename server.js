@@ -57,7 +57,9 @@ app.get('/api/divisions', (req, res) => {
 // ─── API: Get all subcontractors ─────────────────────────────────────────────
 app.get('/api/subcontractors', (req, res) => {
   const { division } = req.query;
-  const query = division && division !== 'all' ? { division_num: division } : {};
+  const query = division && division !== 'all'
+    ? { $or: [{ division_num: division }, { division_nums: division }] }
+    : {};
   db.find(query).sort({ company_name: 1 }).exec((err, docs) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(docs);
@@ -66,9 +68,11 @@ app.get('/api/subcontractors', (req, res) => {
 
 // ─── API: Add subcontractor ──────────────────────────────────────────────────
 app.post('/api/subcontractors', async (req, res) => {
-  const { company_name, address, city, state, zip, division_num, division_name, contact_name, contact_phone, contact_email, notes } = req.body;
+  const { company_name, address, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, notes } = req.body;
+  const normalizedDivisionNums = [...new Set((Array.isArray(division_nums) ? division_nums : [division_num]).filter(Boolean))];
+  const primaryDivisionNum = normalizedDivisionNums[0];
 
-  if (!company_name || !division_num) {
+  if (!company_name || !primaryDivisionNum) {
     return res.status(400).json({ error: 'Company name and division are required.' });
   }
 
@@ -91,15 +95,21 @@ app.post('/api/subcontractors', async (req, res) => {
     }
   }
 
-  const divInfo = CSI_DIVISIONS.find(d => d.num === division_num);
+  const divisionNames = normalizedDivisionNums.map((num) => {
+    const info = CSI_DIVISIONS.find(d => d.num === num);
+    return info ? info.name : '';
+  }).filter(Boolean);
+  const divInfo = CSI_DIVISIONS.find(d => d.num === primaryDivisionNum);
   const doc = {
     company_name,
     address,
     city,
     state: state || 'OH',
     zip,
-    division_num,
+    division_num: primaryDivisionNum,
+    division_nums: normalizedDivisionNums,
     division_name: divInfo ? divInfo.name : division_name,
+    division_names: divisionNames,
     contact_name: contact_name || '',
     contact_phone: contact_phone || '',
     contact_email: contact_email || '',
@@ -119,6 +129,15 @@ app.post('/api/subcontractors', async (req, res) => {
 app.put('/api/subcontractors/:id', async (req, res) => {
   const { id } = req.params;
   const updates = req.body;
+  if (updates.division_nums || updates.division_num) {
+    const normalizedDivisionNums = [...new Set((Array.isArray(updates.division_nums) ? updates.division_nums : [updates.division_num]).filter(Boolean))];
+    updates.division_nums = normalizedDivisionNums;
+    updates.division_num = normalizedDivisionNums[0] || '';
+    updates.division_names = normalizedDivisionNums.map((num) => {
+      const info = CSI_DIVISIONS.find(d => d.num === num);
+      return info ? info.name : '';
+    }).filter(Boolean);
+  }
 
   // Re-geocode if address fields changed
   if (updates.address || updates.city || updates.zip) {

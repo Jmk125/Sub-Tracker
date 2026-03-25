@@ -68,14 +68,7 @@ async function loadDivisions() {
     globalSel.appendChild(opt);
   });
 
-  // Populate form select
-  const fDiv = document.getElementById('fDivision');
-  state.divisions.forEach(d => {
-    const opt = document.createElement('option');
-    opt.value = d.num;
-    opt.textContent = `${d.num} — ${d.name}`;
-    fDiv.appendChild(opt);
-  });
+  setDivisionSelections([state.divisions[0]?.num].filter(Boolean));
 }
 
 async function loadSubs() {
@@ -133,7 +126,7 @@ function getFilteredSubs() {
   let list = [...state.subs];
 
   if (state.filter.division !== 'all') {
-    list = list.filter(s => s.division_num === state.filter.division);
+    list = list.filter(s => getSubDivisionNums(s).includes(state.filter.division));
   }
 
   if (state.filter.search) {
@@ -196,10 +189,7 @@ function renderList() {
       <div class="sub-card-main">
         <div class="sub-name">${escHtml(sub.company_name)}</div>
         <div class="sub-meta">
-          <span class="division-badge" style="color:${color};border-color:${color}33">
-            <span>${sub.division_num}</span>
-            <span>${escHtml(sub.division_name)}</span>
-          </span>
+          ${renderDivisionBadges(sub)}
           ${addr ? `<span>📍 ${escHtml(addr)}</span>` : ''}
         </div>
         ${contactParts.length ? `<div class="sub-contact">👤 ${contactParts.join(' · ')}</div>` : ''}
@@ -240,6 +230,8 @@ function setupModal() {
   document.getElementById('modalCancel').addEventListener('click', closeModal);
   document.getElementById('modal').querySelector('.modal-backdrop').addEventListener('click', closeModal);
   document.getElementById('modalSave').addEventListener('click', saveModal);
+  document.getElementById('btnAddDivisionRow').addEventListener('click', () => addDivisionRow());
+  document.getElementById('btnPasteAddress').addEventListener('click', pasteAddressFromClipboard);
 }
 
 function openAddModal() {
@@ -256,7 +248,7 @@ function openEditModal(id) {
   state.editingId = id;
   document.getElementById('modalTitle').textContent = 'Edit Subcontractor';
   document.getElementById('fCompanyName').value = sub.company_name || '';
-  document.getElementById('fDivision').value = sub.division_num || '';
+  setDivisionSelections(getSubDivisionNums(sub));
   document.getElementById('fAddress').value = sub.address || '';
   document.getElementById('fCity').value = sub.city || '';
   document.getElementById('fState').value = sub.state || 'OH';
@@ -275,7 +267,8 @@ function clearForm() {
   });
   document.getElementById('fState').value = 'OH';
   document.getElementById('fZip').value = '';
-  document.getElementById('fDivision').selectedIndex = 0;
+  setDivisionSelections([state.divisions[0]?.num].filter(Boolean));
+  clearAddressFieldHighlights();
   hideGeoStatus();
 }
 
@@ -286,9 +279,10 @@ function closeModal() {
 
 async function saveModal() {
   const company_name = document.getElementById('fCompanyName').value.trim();
-  const division_num = document.getElementById('fDivision').value;
+  const division_nums = getDivisionSelections();
+  const division_num = division_nums[0];
 
-  if (!company_name) {
+  if (!company_name || !division_num) {
     document.getElementById('fCompanyName').focus();
     return;
   }
@@ -296,6 +290,7 @@ async function saveModal() {
   const payload = {
     company_name,
     division_num,
+    division_nums,
     address: document.getElementById('fAddress').value.trim(),
     city: document.getElementById('fCity').value.trim(),
     state: document.getElementById('fState').value.trim() || 'OH',
@@ -322,6 +317,119 @@ async function saveModal() {
   } finally {
     document.getElementById('modalSave').disabled = false;
   }
+}
+
+function addDivisionRow(value = '') {
+  const rows = document.getElementById('divisionRows');
+  const row = document.createElement('div');
+  row.className = 'division-row';
+
+  const select = document.createElement('select');
+  select.className = 'division-select';
+  state.divisions.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.num;
+    opt.textContent = `${d.num} — ${d.name}`;
+    select.appendChild(opt);
+  });
+  if (value) select.value = value;
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn btn-danger btn-sm btn-inline';
+  removeBtn.textContent = '−';
+  removeBtn.title = 'Remove division';
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    ensureDivisionRows();
+  });
+
+  row.appendChild(select);
+  row.appendChild(removeBtn);
+  rows.appendChild(row);
+  ensureDivisionRows();
+}
+
+function ensureDivisionRows() {
+  const rows = document.getElementById('divisionRows');
+  if (!rows.children.length) addDivisionRow(state.divisions[0]?.num || '');
+  rows.querySelectorAll('.division-row').forEach((row, idx) => {
+    const btn = row.querySelector('button');
+    btn.disabled = rows.children.length === 1 && idx === 0;
+  });
+}
+
+function getDivisionSelections() {
+  const nums = [...document.querySelectorAll('.division-select')]
+    .map(el => el.value)
+    .filter(Boolean);
+  return [...new Set(nums)];
+}
+
+function setDivisionSelections(nums) {
+  const rows = document.getElementById('divisionRows');
+  rows.innerHTML = '';
+  (nums.length ? nums : [state.divisions[0]?.num]).forEach(n => addDivisionRow(n));
+}
+
+async function pasteAddressFromClipboard() {
+  clearAddressFieldHighlights();
+  try {
+    const text = await navigator.clipboard.readText();
+    const parsed = parseAddressText(text);
+    if (!parsed) {
+      setGeoStatus('error', '❌ Could not parse that address. Please paste manually.');
+      return;
+    }
+
+    document.getElementById('fAddress').value = parsed.address || '';
+    document.getElementById('fCity').value = parsed.city || '';
+    document.getElementById('fState').value = parsed.state || 'OH';
+    document.getElementById('fZip').value = parsed.zip || '';
+
+    const missing = [];
+    if (!parsed.address) missing.push('fAddress');
+    if (!parsed.city) missing.push('fCity');
+    if (!parsed.state) missing.push('fState');
+    if (!parsed.zip) missing.push('fZip');
+
+    if (missing.length) {
+      missing.forEach(id => document.getElementById(id).classList.add('field-missing'));
+      setGeoStatus('error', `⚠ Address pasted, but missing: ${missing.map(id => id.replace('f', '')).join(', ')}.`);
+    } else {
+      setGeoStatus('ok', '✅ Address pasted into all fields.');
+    }
+  } catch (e) {
+    setGeoStatus('error', '❌ Clipboard access blocked. Allow clipboard permission and try again.');
+  }
+}
+
+function parseAddressText(text) {
+  if (!text) return null;
+  const normalized = text.replace(/\n/g, ', ').replace(/\s+/g, ' ').trim();
+  const fullMatch = normalized.match(/^(.*?),\s*([^,]+),\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  if (fullMatch) {
+    return {
+      address: fullMatch[1].trim(),
+      city: fullMatch[2].trim(),
+      state: fullMatch[3].toUpperCase(),
+      zip: fullMatch[4],
+    };
+  }
+  const partialMatch = normalized.match(/^(.*?)(?:,\s*([^,]+))?(?:,\s*([A-Za-z]{2}))?(?:\s+(\d{5}(?:-\d{4})?))?$/);
+  if (!partialMatch) return null;
+  return {
+    address: (partialMatch[1] || '').trim(),
+    city: (partialMatch[2] || '').trim(),
+    state: (partialMatch[3] || '').toUpperCase(),
+    zip: (partialMatch[4] || '').trim(),
+  };
+}
+
+function clearAddressFieldHighlights() {
+  ['fAddress', 'fCity', 'fState', 'fZip'].forEach(id => {
+    document.getElementById(id).classList.remove('field-missing');
+  });
 }
 
 function setGeoStatus(type, msg) {
@@ -487,7 +595,8 @@ function renderPins() {
     if (!projected) return;
 
     const [px, py] = projected;
-    const color = divColorMap[sub.division_num] || '#7a8496';
+    const primaryDivision = getSubDivisionNums(sub)[0];
+    const color = divColorMap[primaryDivision] || '#7a8496';
 
     const pinG = pinsG.append('g')
       .attr('class', 'pin-group')
@@ -514,7 +623,7 @@ function renderPins() {
         const addr = [sub.city, sub.state].filter(Boolean).join(', ');
         tooltip.innerHTML = `
           <strong>${escHtml(sub.company_name)}</strong>
-          <div class="tt-div">Div ${sub.division_num} — ${escHtml(sub.division_name)}</div>
+          <div class="tt-div">${renderDivisionTooltip(sub)}</div>
           ${addr ? `<div class="tt-addr">📍 ${escHtml(addr)}</div>` : ''}
           ${sub.contact_name ? `<div class="tt-addr">👤 ${escHtml(sub.contact_name)}</div>` : ''}
         `;
@@ -548,7 +657,7 @@ function renderMapLegend(filtered) {
   container.innerHTML = '';
 
   // Get unique divisions present
-  const divs = [...new Set(filtered.map(s => s.division_num))].sort();
+  const divs = [...new Set(filtered.flatMap(s => getSubDivisionNums(s)))].sort();
 
   if (divs.length === 0) {
     container.innerHTML = '<div style="color:var(--text-muted);font-size:11px;">No pins visible</div>';
@@ -558,7 +667,7 @@ function renderMapLegend(filtered) {
   divs.forEach(num => {
     const div = state.divisions.find(d => d.num === num);
     const color = divColorMap[num] || '#7a8496';
-    const count = filtered.filter(s => s.division_num === num).length;
+    const count = filtered.filter(s => getSubDivisionNums(s).includes(num)).length;
 
     const item = document.createElement('div');
     item.className = 'legend-item';
@@ -583,13 +692,35 @@ function renderMapPinList(filtered) {
   filtered.forEach(sub => {
     const item = document.createElement('div');
     item.className = 'pin-list-item';
-    const color = divColorMap[sub.division_num] || '#7a8496';
+    const color = divColorMap[getSubDivisionNums(sub)[0]] || '#7a8496';
     item.innerHTML = `
       <div class="pin-list-name" style="color:${color}">${escHtml(sub.company_name)}</div>
       <div>${sub.city || '—'}</div>
     `;
     container.appendChild(item);
   });
+}
+
+function getSubDivisionNums(sub) {
+  if (Array.isArray(sub.division_nums) && sub.division_nums.length) return sub.division_nums;
+  return sub.division_num ? [sub.division_num] : [];
+}
+
+function renderDivisionBadges(sub) {
+  return getSubDivisionNums(sub).map((num) => {
+    const color = divColorMap[num] || '#7a8496';
+    const div = state.divisions.find(d => d.num === num);
+    return `<span class="division-badge" style="color:${color};border-color:${color}33"><span>${num}</span><span>${escHtml(div?.name || '')}</span></span>`;
+  }).join('');
+}
+
+function renderDivisionTooltip(sub) {
+  return getSubDivisionNums(sub)
+    .map((num) => {
+      const div = state.divisions.find(d => d.num === num);
+      return `Div ${num} — ${escHtml(div?.name || '')}`;
+    })
+    .join('<br>');
 }
 
 // ── Util ───────────────────────────────────────────────────
