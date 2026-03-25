@@ -16,6 +16,29 @@ npm start
 
 Access at: http://<pi-ip>:3007
 
+## HTTPS (recommended for clipboard auto-paste)
+
+Clipboard read APIs are more reliable in secure contexts. The server now supports HTTPS if a cert/key are present:
+
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout certs/localhost.key \
+  -out certs/localhost.crt \
+  -days 365 \
+  -subj "/CN=localhost"
+```
+
+Then start normally:
+
+```bash
+node server.js
+```
+
+- HTTPS URL: `https://<host>:3443`
+- HTTP port 3007 will redirect to HTTPS when certs exist.
+- Override paths/ports with env vars: `SSL_CERT_PATH`, `SSL_KEY_PATH`, `PORT`, `HTTPS_PORT`.
+
 ## Features
 
 - **List Tab**: Add, edit, delete subcontractors with CSI MasterFormat divisions

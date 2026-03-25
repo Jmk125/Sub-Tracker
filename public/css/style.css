@@ -697,8 +697,37 @@ select {
   letter-spacing: 0.08em;
   color: var(--text-dim);
 }
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 
 .req { color: var(--accent); }
+
+.division-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.division-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-inline {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.field-missing {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 1px rgba(192,57,43,0.3);
+}
 
 .section-divider {
   display: flex;
