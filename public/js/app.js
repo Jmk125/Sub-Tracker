@@ -549,11 +549,10 @@ function setupManualCoordsModal() {
 function openManualCoordsModal(subId, options = {}) {
   state.manualCoordsId = subId;
   document.getElementById('manualCoordsReason').textContent = options.reason || 'Unable to geocode this address.';
-  document.getElementById('fManualLat').value = '';
-  document.getElementById('fManualLng').value = '';
+  document.getElementById('fManualCoords').value = '';
   document.getElementById('manualCoordsError').classList.add('hidden');
   document.getElementById('manualCoordsModal').classList.remove('hidden');
-  document.getElementById('fManualLat').focus();
+  document.getElementById('fManualCoords').focus();
 }
 
 function closeManualCoordsModal() {
@@ -563,14 +562,12 @@ function closeManualCoordsModal() {
 
 async function saveManualCoords() {
   if (!state.manualCoordsId) return;
-  const latVal = document.getElementById('fManualLat').value.trim();
-  const lngVal = document.getElementById('fManualLng').value.trim();
-  const lat = parseFloat(latVal);
-  const lng = parseFloat(lngVal);
+  const coordsRaw = document.getElementById('fManualCoords').value.trim();
+  const [lat, lng] = parseLatLng(coordsRaw);
   const errorEl = document.getElementById('manualCoordsError');
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-    errorEl.textContent = 'Enter valid coordinates (lat between -90 and 90, lng between -180 and 180).';
+    errorEl.textContent = 'Enter valid coordinates in this format: "lat, lng" (example: 39.9612, -82.9988).';
     errorEl.classList.remove('hidden');
     return;
   }
@@ -586,6 +583,12 @@ async function saveManualCoords() {
   } finally {
     document.getElementById('manualCoordsSave').disabled = false;
   }
+}
+
+function parseLatLng(value) {
+  const parts = String(value || '').split(',').map(v => v.trim()).filter(Boolean);
+  if (parts.length !== 2) return [NaN, NaN];
+  return [parseFloat(parts[0]), parseFloat(parts[1])];
 }
 
 // ── MAP ────────────────────────────────────────────────────
