@@ -11,10 +11,9 @@ const state = {
   editingId: null,
   pendingDeleteId: null,
   mapReady: false,
-  mapProjection: null,
-  mapZoom: null,
-  mapSvg: null,
-  mapG: null,
+  mapLeaflet: null,
+  mapLayerGroup: null,
+  coverageRadiusMiles: 25,
   manualCoordsId: null,
 };
 
@@ -598,171 +597,103 @@ function parseLatLng(value) {
 
 // ── MAP ────────────────────────────────────────────────────
 async function initMap() {
-  const svgEl = document.getElementById('ohioMap');
-  const width = svgEl.clientWidth || 900;
-  const height = svgEl.clientHeight || 700;
+  const map = L.map('ohioMap', {
+    zoomControl: false,
+    minZoom: 6,
+    maxZoom: 18,
+  }).setView([40.25, -82.85], 7);
 
-  const svg = d3.select('#ohioMap');
-  svg.selectAll('*').remove();
+  state.mapLeaflet = map;
+  state.mapLayerGroup = L.layerGroup().addTo(map);
 
-  const g = svg.append('g').attr('class', 'map-root');
-  state.mapSvg = svg;
-  state.mapG = g;
-
-  // Zoom behavior
-  const zoom = d3.zoom()
-    .scaleExtent([0.5, 12])
-    .on('zoom', (event) => {
-      g.attr('transform', event.transform);
-    });
-
-  svg.call(zoom);
-  state.mapZoom = zoom;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(map);
 
   // Zoom controls
   document.getElementById('btnZoomIn').addEventListener('click', () => {
-    svg.transition().call(zoom.scaleBy, 1.5);
+    map.zoomIn();
   });
   document.getElementById('btnZoomOut').addEventListener('click', () => {
-    svg.transition().call(zoom.scaleBy, 1 / 1.5);
+    map.zoomOut();
   });
   document.getElementById('btnResetZoom').addEventListener('click', () => {
-    svg.transition().call(zoom.transform, d3.zoomIdentity);
+    map.setView([40.25, -82.85], 7);
   });
 
-  // Load Ohio TopoJSON
-  let ohioTopo;
-  try {
-    ohioTopo = await d3.json('https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json');
-  } catch (e) {
-    console.error('Failed to load TopoJSON:', e);
-    g.append('text')
-      .attr('x', width / 2).attr('y', height / 2)
-      .attr('text-anchor', 'middle')
-      .attr('fill', '#7a8496')
-      .text('Map data failed to load. Check internet connection.');
-    return;
-  }
+  const radiusSlider = document.getElementById('coverageRadiusMiles');
+  const radiusLabel = document.getElementById('coverageRadiusLabel');
+  radiusSlider.value = String(state.coverageRadiusMiles);
+  radiusLabel.textContent = `${state.coverageRadiusMiles} mi`;
+  radiusSlider.addEventListener('input', () => {
+    state.coverageRadiusMiles = parseInt(radiusSlider.value, 10) || 25;
+    radiusLabel.textContent = `${state.coverageRadiusMiles} mi`;
+    renderPins();
+  });
 
-  // Extract Ohio counties (FIPS 39xxx)
-  const allCounties = topojson.feature(ohioTopo, ohioTopo.objects.counties);
-  const ohioCounties = {
-    type: 'FeatureCollection',
-    features: allCounties.features.filter(f => f.id && String(f.id).startsWith('39'))
-  };
-
-  // Projection fit to Ohio
-  const projection = d3.geoAlbersUsa()
-    .fitSize([width * 0.85, height * 0.85], ohioCounties);
-
-  // Center the projection output
-  const [[x0, y0], [x1, y1]] = d3.geoPath().projection(projection).bounds(ohioCounties);
-  const offsetX = (width - (x1 - x0)) / 2 - x0;
-  const offsetY = (height - (y1 - y0)) / 2 - y0;
-
-  state.mapProjection = projection;
-
-  const path = d3.geoPath().projection(projection);
-
-  // Draw counties
-  const countiesG = g.append('g').attr('class', 'counties').attr('transform', `translate(${offsetX},${offsetY})`);
-
-  countiesG.selectAll('.county-path')
-    .data(ohioCounties.features)
-    .enter()
-    .append('path')
-    .attr('class', 'county-path')
-    .attr('d', path)
-    .attr('data-fips', d => d.id)
-    .on('mouseover', function (event, d) {
-      d3.select(this).style('fill', '#253560');
-    })
-    .on('mouseout', function (event, d) {
-      const hasSubs = d3.select(this).classed('has-subs');
-      d3.select(this).style('fill', hasSubs ? '#1e2d4a' : '#1a2030');
-    });
-
-  // Store offset for pin rendering
-  state.mapOffset = { x: offsetX, y: offsetY };
+  map.on('zoomend moveend', () => {
+    const tooltip = document.getElementById('mapTooltip');
+    tooltip.style.display = 'none';
+  });
   state.mapReady = true;
-
   renderPins();
 }
 
 function renderPins() {
-  if (!state.mapReady || !state.mapG) return;
+  if (!state.mapReady || !state.mapLeaflet || !state.mapLayerGroup) return;
 
   const filtered = getFilteredSubs().filter(s => s.lat && s.lng);
+  const coverageMeters = state.coverageRadiusMiles * 1609.34;
+  state.mapLayerGroup.clearLayers();
 
   // Update sidebar stats
-  const countiesWithSubs = new Set();
-
-  // Remove old pins
-  state.mapG.selectAll('.pin-group').remove();
-
-  const tooltip = document.getElementById('mapTooltip');
-  const mapArea = document.getElementById('map-area');
-
-  // Track which counties have subs
-  state.mapG.selectAll('.county-path').classed('has-subs', false);
-
-  const pinsG = state.mapG.append('g').attr('class', 'pins-layer')
-    .attr('transform', `translate(${state.mapOffset.x},${state.mapOffset.y})`);
+  const visibleCities = new Set();
 
   filtered.forEach(sub => {
-    const projected = state.mapProjection([sub.lng, sub.lat]);
-    if (!projected) return;
-
-    const [px, py] = projected;
     const primaryDivision = getSubDivisionNums(sub)[0];
     const color = divColorMap[primaryDivision] || '#7a8496';
+    const marker = L.circleMarker([sub.lat, sub.lng], {
+      radius: 7,
+      color: '#0f1114',
+      weight: 1.5,
+      fillColor: color,
+      fillOpacity: 0.95,
+    });
 
-    const pinG = pinsG.append('g')
-      .attr('class', 'pin-group')
-      .attr('transform', `translate(${px},${py})`);
+    marker.bindTooltip(`
+      <strong>${escHtml(sub.company_name)}</strong><br>
+      ${renderDivisionTooltip(sub)}<br>
+      ${escHtml([sub.city, sub.state].filter(Boolean).join(', '))}
+    `, {
+      direction: 'top',
+      offset: [0, -8],
+      opacity: 0.95,
+    });
 
-    // Outer ring
-    pinG.append('circle')
-      .attr('class', 'pin-outer')
-      .attr('r', 9)
-      .attr('stroke', color)
-      .attr('fill', 'none')
-      .attr('opacity', 0.4);
+    marker.bindPopup(buildMapPopup(sub), {
+      maxWidth: 320,
+      className: 'sub-popup',
+    });
 
-    // Inner dot
-    pinG.append('circle')
-      .attr('class', 'pin-inner sub-pin')
-      .attr('r', 5)
-      .attr('fill', color)
-      .attr('stroke', '#0f1114')
-      .attr('stroke-width', 1.5)
-      .on('mouseover', function (event) {
-        d3.select(this).attr('r', 8);
-        tooltip.style.display = 'block';
-        const addr = [sub.city, sub.state].filter(Boolean).join(', ');
-        tooltip.innerHTML = `
-          <strong>${escHtml(sub.company_name)}</strong>
-          <div class="tt-div">${renderDivisionTooltip(sub)}</div>
-          ${addr ? `<div class="tt-addr">📍 ${escHtml(addr)}</div>` : ''}
-          ${sub.contact_name ? `<div class="tt-addr">👤 ${escHtml(sub.contact_name)}</div>` : ''}
-        `;
-      })
-      .on('mousemove', function (event) {
-        const rect = mapArea.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
-        tooltip.style.left = (x + 14) + 'px';
-        tooltip.style.top = (y - 10) + 'px';
-      })
-      .on('mouseout', function () {
-        d3.select(this).attr('r', 5);
-        tooltip.style.display = 'none';
-      });
+    marker.addTo(state.mapLayerGroup);
+
+    L.circle([sub.lat, sub.lng], {
+      radius: coverageMeters,
+      color,
+      weight: 1,
+      opacity: 0.45,
+      fillColor: color,
+      fillOpacity: 0.08,
+      interactive: false,
+    }).addTo(state.mapLayerGroup);
+
+    if (sub.city) visibleCities.add(sub.city.toLowerCase());
   });
 
   // Update sidebar stats
   document.getElementById('mapSubCount').textContent = filtered.length;
-  document.getElementById('mapCountyCount').textContent = countiesWithSubs.size;
+  document.getElementById('mapCountyCount').textContent = visibleCities.size;
 
   // Update legend
   renderMapLegend(filtered);
@@ -816,8 +747,31 @@ function renderMapPinList(filtered) {
       <div class="pin-list-name" style="color:${color}">${escHtml(sub.company_name)}</div>
       <div>${sub.city || '—'}</div>
     `;
+    item.addEventListener('click', () => {
+      if (!state.mapLeaflet) return;
+      state.mapLeaflet.setView([sub.lat, sub.lng], Math.max(state.mapLeaflet.getZoom(), 11));
+    });
     container.appendChild(item);
   });
+}
+
+function buildMapPopup(sub) {
+  const addr = [sub.address, sub.city, sub.state, sub.zip].filter(Boolean).join(', ');
+  const website = normalizeWebsite(sub.website);
+  return `
+    <div>
+      <div style="font-family:var(--font-display);font-size:15px;font-weight:700;color:#fff;margin-bottom:6px;">
+        ${escHtml(sub.company_name)}
+      </div>
+      <div style="font-size:12px;color:var(--accent);margin-bottom:6px;">${renderDivisionTooltip(sub)}</div>
+      ${addr ? `<div style="margin-bottom:4px;">📍 ${escHtml(addr)}</div>` : ''}
+      ${sub.contact_name ? `<div>👤 ${escHtml(sub.contact_name)}</div>` : ''}
+      ${sub.contact_phone ? `<div>📞 ${escHtml(sub.contact_phone)}</div>` : ''}
+      ${sub.contact_email ? `<div>✉️ <a href="mailto:${escAttr(sub.contact_email)}">${escHtml(sub.contact_email)}</a></div>` : ''}
+      ${website ? `<div>🌐 <a href="${escAttr(website)}" target="_blank" rel="noopener noreferrer">${escHtml(sub.website)}</a></div>` : ''}
+      ${sub.notes ? `<div style="margin-top:6px;color:var(--text-dim);">${escHtml(sub.notes)}</div>` : ''}
+    </div>
+  `;
 }
 
 function getSubDivisionNums(sub) {

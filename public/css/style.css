@@ -520,6 +520,59 @@ body {
 .map-tooltip .tt-div { color: var(--accent); font-size: 11px; font-weight: 600; }
 .map-tooltip .tt-addr { color: var(--text-dim); margin-top: 3px; }
 
+.map-bottom-controls {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(20, 26, 40, 0.92);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  backdrop-filter: blur(2px);
+}
+
+.map-bottom-controls label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.map-bottom-controls input[type="range"] {
+  flex: 1;
+}
+
+#coverageRadiusLabel {
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--accent);
+  min-width: 44px;
+  text-align: right;
+}
+
+.leaflet-container {
+  background: #111725;
+  font-family: var(--font-body);
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border2);
+}
+
+.leaflet-popup-content {
+  margin: 10px 12px;
+}
+
 /* ── Forms / Inputs ──────────────────────────────────────── */
 input, select, textarea {
   background: var(--bg);
