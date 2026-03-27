@@ -18,6 +18,7 @@ const state = {
   coverageRadiusMiles: 25,
   showCoverageRadius: true,
   manualCoordsId: null,
+  exportColumns: [],
 };
 
 // Division color palette (for map pins)
@@ -28,6 +29,23 @@ const DIVISION_COLORS = [
   '#e91e63','#00bcd4','#ff5722','#607d8b','#795548',
 ];
 const MAP_HOVER_COLOR = '#e8a020';
+const EXPORT_FIELDS = [
+  { key: 'company_name', label: 'Company Name', value: sub => sub.company_name || '' },
+  { key: 'division_nums', label: 'Division Numbers', value: sub => getSubDivisionNums(sub).join(', ') },
+  { key: 'division_names', label: 'Division Names', value: sub => getSubDivisionNames(sub).join(', ') },
+  { key: 'address', label: 'Street Address', value: sub => sub.address || '' },
+  { key: 'city', label: 'City', value: sub => sub.city || '' },
+  { key: 'state', label: 'State', value: sub => sub.state || '' },
+  { key: 'zip', label: 'ZIP', value: sub => sub.zip || '' },
+  { key: 'website', label: 'Website', value: sub => sub.website || '' },
+  { key: 'contact_name', label: 'Contact Name', value: sub => sub.contact_name || '' },
+  { key: 'contact_phone', label: 'Contact Phone', value: sub => sub.contact_phone || '' },
+  { key: 'contact_email', label: 'Contact Email', value: sub => sub.contact_email || '' },
+  { key: 'notes', label: 'Notes', value: sub => sub.notes || '' },
+  { key: 'lat', label: 'Latitude', value: sub => sub.lat ?? '' },
+  { key: 'lng', label: 'Longitude', value: sub => sub.lng ?? '' },
+  { key: 'created_at', label: 'Created At', value: sub => sub.created_at || '' },
+];
 
 const divColorMap = {};
 
@@ -35,10 +53,12 @@ const divColorMap = {};
 async function init() {
   await loadDivisions();
   await loadSubs();
+  state.exportColumns = EXPORT_FIELDS.map(field => field.key);
   setupTabs();
   setupFilters();
   setupModal();
   setupConfirmModal();
+  setupExportModal();
 }
 
 // ── API ────────────────────────────────────────────────────
@@ -508,6 +528,159 @@ function hideGeoStatus() {
   document.getElementById('geocodeStatus').className = 'geocode-status hidden';
 }
 
+// ── Export Workbook ───────────────────────────────────────
+function setupExportModal() {
+  document.getElementById('btnExportSubs').addEventListener('click', openExportModal);
+  document.getElementById('exportClose').addEventListener('click', closeExportModal);
+  document.getElementById('exportCancel').addEventListener('click', closeExportModal);
+  document.getElementById('exportRun').addEventListener('click', runExcelExport);
+  document.getElementById('exportModal').querySelector('.modal-backdrop').addEventListener('click', closeExportModal);
+}
+
+function openExportModal() {
+  renderExportFields();
+  document.getElementById('exportModal').classList.remove('hidden');
+}
+
+function closeExportModal() {
+  document.getElementById('exportModal').classList.add('hidden');
+}
+
+function renderExportFields() {
+  const list = document.getElementById('exportFieldsList');
+  list.innerHTML = '';
+
+  state.exportColumns.forEach((fieldKey, index) => {
+    const field = EXPORT_FIELDS.find(item => item.key === fieldKey);
+    if (!field) return;
+
+    const row = document.createElement('div');
+    row.className = 'export-field-row';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    checkbox.dataset.key = field.key;
+    checkbox.addEventListener('change', () => toggleExportField(field.key, checkbox.checked));
+
+    const label = document.createElement('label');
+    label.textContent = field.label;
+    label.htmlFor = '';
+
+    const moveControls = document.createElement('div');
+    moveControls.className = 'export-move-controls';
+    const upBtn = document.createElement('button');
+    upBtn.className = 'btn btn-ghost btn-sm';
+    upBtn.type = 'button';
+    upBtn.textContent = '↑';
+    upBtn.disabled = index === 0;
+    upBtn.addEventListener('click', () => moveExportField(field.key, -1));
+
+    const downBtn = document.createElement('button');
+    downBtn.className = 'btn btn-ghost btn-sm';
+    downBtn.type = 'button';
+    downBtn.textContent = '↓';
+    downBtn.disabled = index === state.exportColumns.length - 1;
+    downBtn.addEventListener('click', () => moveExportField(field.key, 1));
+
+    moveControls.appendChild(upBtn);
+    moveControls.appendChild(downBtn);
+    row.appendChild(checkbox);
+    row.appendChild(label);
+    row.appendChild(moveControls);
+    list.appendChild(row);
+  });
+
+  // Render unselected fields at bottom so users can add them back.
+  EXPORT_FIELDS
+    .filter(field => !state.exportColumns.includes(field.key))
+    .forEach((field) => {
+      const row = document.createElement('div');
+      row.className = 'export-field-row';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = false;
+      checkbox.addEventListener('change', () => toggleExportField(field.key, checkbox.checked));
+
+      const label = document.createElement('label');
+      label.textContent = field.label;
+
+      row.appendChild(checkbox);
+      row.appendChild(label);
+      row.appendChild(document.createElement('div'));
+      list.appendChild(row);
+    });
+}
+
+function toggleExportField(fieldKey, shouldInclude) {
+  const hasField = state.exportColumns.includes(fieldKey);
+  if (shouldInclude && !hasField) state.exportColumns.push(fieldKey);
+  if (!shouldInclude && hasField) state.exportColumns = state.exportColumns.filter(k => k !== fieldKey);
+  renderExportFields();
+}
+
+function moveExportField(fieldKey, offset) {
+  const idx = state.exportColumns.indexOf(fieldKey);
+  if (idx < 0) return;
+  const next = idx + offset;
+  if (next < 0 || next >= state.exportColumns.length) return;
+  [state.exportColumns[idx], state.exportColumns[next]] = [state.exportColumns[next], state.exportColumns[idx]];
+  renderExportFields();
+}
+
+function runExcelExport() {
+  if (!window.XLSX) {
+    window.alert('Excel export library did not load. Refresh and try again.');
+    return;
+  }
+
+  if (!state.exportColumns.length) {
+    window.alert('Choose at least one column to export.');
+    return;
+  }
+
+  const selectedFields = state.exportColumns
+    .map(key => EXPORT_FIELDS.find(field => field.key === key))
+    .filter(Boolean);
+
+  const workbook = XLSX.utils.book_new();
+  const masterRows = buildExportRows(state.subs, selectedFields);
+  const masterSheet = XLSX.utils.json_to_sheet(masterRows, {
+    header: selectedFields.map(field => field.label),
+  });
+  XLSX.utils.book_append_sheet(workbook, masterSheet, 'Master');
+
+  state.divisions.forEach((division) => {
+    const divisionSubs = state.subs.filter(sub => getSubDivisionNums(sub).includes(division.num));
+    if (!divisionSubs.length) return;
+    const divisionRows = buildExportRows(divisionSubs, selectedFields);
+    const divisionSheet = XLSX.utils.json_to_sheet(divisionRows, {
+      header: selectedFields.map(field => field.label),
+    });
+    XLSX.utils.book_append_sheet(workbook, divisionSheet, buildSheetName(division));
+  });
+
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(workbook, `subcontractors-export-${dateStamp}.xlsx`);
+  closeExportModal();
+}
+
+function buildExportRows(subs, selectedFields) {
+  return subs.map((sub) => {
+    const row = {};
+    selectedFields.forEach((field) => {
+      row[field.label] = field.value(sub);
+    });
+    return row;
+  });
+}
+
+function buildSheetName(division) {
+  const raw = `${division.num} ${division.name}`;
+  return raw.replace(/[\\/?*[\]:]/g, '').slice(0, 31);
+}
+
 // ── Confirm Delete ─────────────────────────────────────────
 function setupConfirmModal() {
   document.getElementById('confirmCancel').addEventListener('click', () => {
@@ -820,6 +993,14 @@ function buildMapPopup(sub) {
 function getSubDivisionNums(sub) {
   if (Array.isArray(sub.division_nums) && sub.division_nums.length) return sub.division_nums;
   return sub.division_num ? [sub.division_num] : [];
+}
+
+function getSubDivisionNames(sub) {
+  const nums = getSubDivisionNums(sub);
+  return nums.map((num) => {
+    const div = state.divisions.find(d => d.num === num);
+    return div?.name || '';
+  }).filter(Boolean);
 }
 
 function renderDivisionBadges(sub) {
