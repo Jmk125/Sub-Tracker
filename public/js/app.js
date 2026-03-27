@@ -13,7 +13,10 @@ const state = {
   mapReady: false,
   mapLeaflet: null,
   mapLayerGroup: null,
+  mapPinLookup: new Map(),
+  highlightedPinId: null,
   coverageRadiusMiles: 25,
+  showCoverageRadius: true,
   manualCoordsId: null,
 };
 
@@ -24,6 +27,7 @@ const DIVISION_COLORS = [
   '#d35400','#2ecc71','#c0392b','#2c3e50','#7f8c8d',
   '#e91e63','#00bcd4','#ff5722','#607d8b','#795548',
 ];
+const MAP_HOVER_COLOR = '#e8a020';
 
 const divColorMap = {};
 
@@ -623,12 +627,19 @@ async function initMap() {
   });
 
   const radiusSlider = document.getElementById('coverageRadiusMiles');
-  const radiusLabel = document.getElementById('coverageRadiusLabel');
+  const radiusToggle = document.getElementById('showCoverageRadius');
   radiusSlider.value = String(state.coverageRadiusMiles);
-  radiusLabel.textContent = `${state.coverageRadiusMiles} mi`;
-  radiusSlider.addEventListener('input', () => {
-    state.coverageRadiusMiles = parseInt(radiusSlider.value, 10) || 25;
-    radiusLabel.textContent = `${state.coverageRadiusMiles} mi`;
+  radiusToggle.checked = state.showCoverageRadius;
+  radiusSlider.disabled = !state.showCoverageRadius;
+  radiusSlider.addEventListener('change', () => {
+    const next = parseInt(radiusSlider.value, 10);
+    state.coverageRadiusMiles = Number.isFinite(next) ? Math.max(1, Math.min(300, next)) : 25;
+    radiusSlider.value = String(state.coverageRadiusMiles);
+    renderPins();
+  });
+  radiusToggle.addEventListener('change', () => {
+    state.showCoverageRadius = radiusToggle.checked;
+    radiusSlider.disabled = !state.showCoverageRadius;
     renderPins();
   });
 
@@ -646,6 +657,8 @@ function renderPins() {
   const filtered = getFilteredSubs().filter(s => s.lat && s.lng);
   const coverageMeters = state.coverageRadiusMiles * 1609.34;
   state.mapLayerGroup.clearLayers();
+  state.mapPinLookup.clear();
+  state.highlightedPinId = null;
 
   // Update sidebar stats
   const visibleCities = new Set();
@@ -677,16 +690,19 @@ function renderPins() {
     });
 
     marker.addTo(state.mapLayerGroup);
+    state.mapPinLookup.set(sub._id, { marker, baseColor: color });
 
-    L.circle([sub.lat, sub.lng], {
-      radius: coverageMeters,
-      color,
-      weight: 1,
-      opacity: 0.45,
-      fillColor: color,
-      fillOpacity: 0.08,
-      interactive: false,
-    }).addTo(state.mapLayerGroup);
+    if (state.showCoverageRadius) {
+      L.circle([sub.lat, sub.lng], {
+        radius: coverageMeters,
+        color,
+        weight: 1,
+        opacity: 0.45,
+        fillColor: color,
+        fillOpacity: 0.08,
+        interactive: false,
+      }).addTo(state.mapLayerGroup);
+    }
 
     if (sub.city) visibleCities.add(sub.city.toLowerCase());
   });
@@ -751,8 +767,35 @@ function renderMapPinList(filtered) {
       if (!state.mapLeaflet) return;
       state.mapLeaflet.setView([sub.lat, sub.lng], Math.max(state.mapLeaflet.getZoom(), 11));
     });
+    item.addEventListener('mouseenter', () => setMapPinHighlight(sub._id));
+    item.addEventListener('mouseleave', () => setMapPinHighlight(null));
     container.appendChild(item);
   });
+}
+
+function setMapPinHighlight(subId) {
+  if (state.highlightedPinId && state.mapPinLookup.has(state.highlightedPinId)) {
+    const previousPin = state.mapPinLookup.get(state.highlightedPinId);
+    previousPin.marker.setStyle({
+      radius: 7,
+      fillColor: previousPin.baseColor,
+      color: '#0f1114',
+      weight: 1.5,
+    });
+  }
+
+  state.highlightedPinId = subId;
+
+  if (!subId || !state.mapPinLookup.has(subId)) return;
+
+  const pin = state.mapPinLookup.get(subId);
+  pin.marker.setStyle({
+    radius: 10,
+    fillColor: MAP_HOVER_COLOR,
+    color: MAP_HOVER_COLOR,
+    weight: 2.5,
+  });
+  pin.marker.bringToFront();
 }
 
 function buildMapPopup(sub) {
