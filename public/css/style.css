@@ -526,6 +526,7 @@ body {
   bottom: 16px;
   z-index: 500;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   background: rgba(20, 26, 40, 0.92);

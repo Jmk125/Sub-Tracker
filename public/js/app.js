@@ -17,6 +17,9 @@ const state = {
   highlightedPinId: null,
   coverageRadiusMiles: 25,
   showCoverageRadius: true,
+  showCountyBorders: false,
+  mapCountyLayer: null,
+  countyBordersLoaded: false,
   manualCoordsId: null,
   exportColumns: [],
 };
@@ -29,6 +32,7 @@ const DIVISION_COLORS = [
   '#e91e63','#00bcd4','#ff5722','#607d8b','#795548',
 ];
 const MAP_HOVER_COLOR = '#e8a020';
+const COUNTY_GEOJSON_URL = 'https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json';
 const EXPORT_FIELDS = [
   { key: 'company_name', label: 'Company Name', value: sub => sub.company_name || '' },
   { key: 'division_nums', label: 'Division Numbers', value: sub => getSubDivisionNums(sub).join(', ') },
@@ -801,9 +805,11 @@ async function initMap() {
 
   const radiusSlider = document.getElementById('coverageRadiusMiles');
   const radiusToggle = document.getElementById('showCoverageRadius');
+  const countyToggle = document.getElementById('showCountyBorders');
   radiusSlider.value = String(state.coverageRadiusMiles);
   radiusToggle.checked = state.showCoverageRadius;
   radiusSlider.disabled = !state.showCoverageRadius;
+  countyToggle.checked = state.showCountyBorders;
   radiusSlider.addEventListener('change', () => {
     const next = parseInt(radiusSlider.value, 10);
     state.coverageRadiusMiles = Number.isFinite(next) ? Math.max(1, Math.min(300, next)) : 25;
@@ -815,6 +821,12 @@ async function initMap() {
     radiusSlider.disabled = !state.showCoverageRadius;
     renderPins();
   });
+  countyToggle.addEventListener('change', async () => {
+    state.showCountyBorders = countyToggle.checked;
+    await syncCountyBordersLayer();
+  });
+
+  await syncCountyBordersLayer();
 
   map.on('zoomend moveend', () => {
     const tooltip = document.getElementById('mapTooltip');
@@ -822,6 +834,56 @@ async function initMap() {
   });
   state.mapReady = true;
   renderPins();
+}
+
+
+async function syncCountyBordersLayer() {
+  if (!state.mapLeaflet) return;
+
+  if (!state.showCountyBorders) {
+    if (state.mapCountyLayer && state.mapLeaflet.hasLayer(state.mapCountyLayer)) {
+      state.mapLeaflet.removeLayer(state.mapCountyLayer);
+    }
+    return;
+  }
+
+  if (!state.countyBordersLoaded) {
+    try {
+      const res = await fetch(COUNTY_GEOJSON_URL);
+      if (!res.ok) throw new Error(`County boundary request failed (${res.status})`);
+      const geojson = await res.json();
+      const ohioFeatures = (geojson.features || []).filter(feature => {
+        const countyId = String(feature.id || '');
+        return countyId.startsWith('39');
+      });
+
+      state.mapCountyLayer = L.geoJSON({
+        type: 'FeatureCollection',
+        features: ohioFeatures,
+      }, {
+        style: {
+          color: '#5f6f8f',
+          weight: 1,
+          opacity: 0.9,
+          fillOpacity: 0,
+          interactive: false,
+        },
+      });
+      state.countyBordersLoaded = true;
+    } catch (err) {
+      state.showCountyBorders = false;
+      const countyToggle = document.getElementById('showCountyBorders');
+      if (countyToggle) countyToggle.checked = false;
+      console.error(err);
+      window.alert('Could not load county borders right now.');
+      return;
+    }
+  }
+
+  if (state.mapCountyLayer && !state.mapLeaflet.hasLayer(state.mapCountyLayer)) {
+    state.mapCountyLayer.addTo(state.mapLeaflet);
+    state.mapCountyLayer.bringToBack();
+  }
 }
 
 function renderPins() {
