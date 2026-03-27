@@ -33,6 +33,7 @@
               <option value="all">All Divisions</option>
             </select>
           </div>
+          <button id="btnExportSubs" class="btn btn-ghost">⇩ Export Excel</button>
           <button id="btnAddSub" class="btn btn-primary">+ Add Subcontractor</button>
         </div>
       </div>
@@ -235,6 +236,26 @@
     </div>
   </div>
 
+  <!-- Export Modal -->
+  <div id="exportModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Export Subcontractors</h2>
+        <button class="modal-close" id="exportClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="export-copy">Select the columns to include, then arrange them in the order you want.</p>
+        <div id="exportFieldsList" class="export-fields-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="exportCancel">Cancel</button>
+        <button class="btn btn-primary" id="exportRun">Export Workbook</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
