@@ -522,17 +522,16 @@ body {
 
 .map-bottom-controls {
   position: absolute;
-  left: 16px;
-  right: 16px;
+  left: 14px;
   bottom: 16px;
   z-index: 500;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   background: rgba(20, 26, 40, 0.92);
   border: 1px solid var(--border2);
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 5px 8px;
   backdrop-filter: blur(2px);
 }
 
@@ -545,16 +544,41 @@ body {
   white-space: nowrap;
 }
 
-.map-bottom-controls input[type="range"] {
-  flex: 1;
+.radius-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
 }
 
-#coverageRadiusLabel {
-  font-family: var(--font-display);
-  font-size: 13px;
-  color: var(--accent);
-  min-width: 44px;
+.radius-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+.radius-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#coverageRadiusMiles {
+  width: 72px;
+  padding: 4px 8px;
   text-align: right;
+}
+
+#coverageRadiusMiles:disabled {
+  opacity: 0.5;
+}
+
+.radius-unit {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .leaflet-container {
