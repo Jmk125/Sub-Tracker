@@ -38,6 +38,7 @@ const DIVISION_COLORS = [
 ];
 const MAP_HOVER_COLOR = '#e8a020';
 const COUNTY_GEOJSON_URL = 'https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json';
+const BOUNDARY_STROKE_COLORS = ['#000000', '#1e63ff', '#d62828', '#1f9d55'];
 const EXPORT_FIELDS = [
   { key: 'company_name', label: 'Company Name', value: sub => sub.company_name || '' },
   { key: 'division_nums', label: 'Division Numbers', value: sub => getSubDivisionNums(sub).join(', ') },
@@ -1154,7 +1155,7 @@ async function addBoundaryLayer(item) {
     if (!res.ok) throw new Error(`Boundary load failed (${res.status})`);
     const geojson = await res.json();
     const layer = L.geoJSON(geojson, {
-      style: buildBoundaryStyle(item),
+      style: buildBoundaryStyle(0),
       pointToLayer: (feature, latlng) => {
         const label = getBoundaryFeatureLabel(feature);
         return L.marker(latlng, {
@@ -1174,6 +1175,7 @@ async function addBoundaryLayer(item) {
     }).addTo(state.mapLeaflet);
     state.boundaryLayers.set(item.id, layer);
     state.activeBoundaryIds.add(item.id);
+    applyBoundaryLayerStyles();
   } catch (err) {
     console.error(err);
     window.alert(`Could not load boundary "${item.name}".`);
@@ -1189,11 +1191,23 @@ function removeBoundaryLayer(boundaryId) {
   }
   state.boundaryLayers.delete(boundaryId);
   state.activeBoundaryIds.delete(boundaryId);
+  applyBoundaryLayerStyles();
 }
 
-function buildBoundaryStyle(item) {
+function applyBoundaryLayerStyles() {
+  const orderedIds = [...state.activeBoundaryIds];
+  orderedIds.forEach((boundaryId, index) => {
+    const layer = state.boundaryLayers.get(boundaryId);
+    if (layer && typeof layer.setStyle === 'function') {
+      layer.setStyle(buildBoundaryStyle(index));
+    }
+  });
+}
+
+function buildBoundaryStyle(colorIndex = 0) {
+  const color = BOUNDARY_STROKE_COLORS[colorIndex] || BOUNDARY_STROKE_COLORS[BOUNDARY_STROKE_COLORS.length - 1];
   return {
-    color: '#000000',
+    color,
     weight: 3.5,
     opacity: 1,
     fillOpacity: 0.01,
