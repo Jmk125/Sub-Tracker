@@ -20,6 +20,8 @@ const state = {
   showCountyBorders: false,
   mapCountyLayer: null,
   countyBordersLoaded: false,
+  countyFeatures: [],
+  countyFeaturesPromise: null,
   manualCoordsId: null,
   exportColumns: [],
 };
@@ -56,6 +58,11 @@ const divColorMap = {};
 // ── Init ───────────────────────────────────────────────────
 async function init() {
   await loadDivisions();
+  try {
+    await ensureCountyFeaturesLoaded();
+  } catch (err) {
+    console.warn('County features could not be preloaded:', err.message);
+  }
   await loadSubs();
   state.exportColumns = EXPORT_FIELDS.map(field => field.key);
   setupTabs();
@@ -962,17 +969,10 @@ async function syncCountyBordersLayer() {
 
   if (!state.countyBordersLoaded) {
     try {
-      const res = await fetch(COUNTY_GEOJSON_URL);
-      if (!res.ok) throw new Error(`County boundary request failed (${res.status})`);
-      const geojson = await res.json();
-      const ohioFeatures = (geojson.features || []).filter(feature => {
-        const countyId = String(feature.id || '');
-        return countyId.startsWith('39');
-      });
-
+      await ensureCountyFeaturesLoaded();
       state.mapCountyLayer = L.geoJSON({
         type: 'FeatureCollection',
-        features: ohioFeatures,
+        features: state.countyFeatures,
       }, {
         style: {
           color: '#5f6f8f',
@@ -997,6 +997,26 @@ async function syncCountyBordersLayer() {
     state.mapCountyLayer.addTo(state.mapLeaflet);
     state.mapCountyLayer.bringToBack();
   }
+}
+
+async function ensureCountyFeaturesLoaded() {
+  if (state.countyFeatures.length) return state.countyFeatures;
+  if (state.countyFeaturesPromise) return state.countyFeaturesPromise;
+
+  state.countyFeaturesPromise = fetch(COUNTY_GEOJSON_URL)
+    .then((res) => {
+      if (!res.ok) throw new Error(`County boundary request failed (${res.status})`);
+      return res.json();
+    })
+    .then((geojson) => {
+      state.countyFeatures = (geojson.features || []).filter((feature) => String(feature.id || '').startsWith('39'));
+      return state.countyFeatures;
+    })
+    .finally(() => {
+      state.countyFeaturesPromise = null;
+    });
+
+  return state.countyFeaturesPromise;
 }
 
 function renderPins() {
@@ -1242,8 +1262,61 @@ function renderDivisionTooltip(sub) {
 
 function getSubCounty(sub) {
   const county = (sub.county || '').trim();
-  if (!county) return 'Unknown';
-  return county.toLowerCase().endsWith('county') ? county : `${county} County`;
+  if (county) return county.toLowerCase().endsWith('county') ? county : `${county} County`;
+  const inferredCounty = inferCountyFromCoordinates(sub.lat, sub.lng);
+  if (inferredCounty) return inferredCounty;
+  return 'Unknown';
+}
+
+function inferCountyFromCoordinates(lat, lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !state.countyFeatures.length) return '';
+  const point = [lng, lat];
+  for (const feature of state.countyFeatures) {
+    if (geometryContainsPoint(feature.geometry, point)) {
+      return formatCountyName(feature.properties?.NAME || feature.properties?.name || '');
+    }
+  }
+  return '';
+}
+
+function geometryContainsPoint(geometry, point) {
+  if (!geometry) return false;
+  if (geometry.type === 'Polygon') {
+    return polygonContainsPoint(geometry.coordinates, point);
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates.some((polygon) => polygonContainsPoint(polygon, point));
+  }
+  return false;
+}
+
+function polygonContainsPoint(rings, point) {
+  if (!Array.isArray(rings) || !rings.length) return false;
+  if (!ringContainsPoint(rings[0], point)) return false;
+  for (let i = 1; i < rings.length; i += 1) {
+    if (ringContainsPoint(rings[i], point)) return false;
+  }
+  return true;
+}
+
+function ringContainsPoint(ring, point) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    const intersects = ((yi > point[1]) !== (yj > point[1]))
+      && (point[0] < ((xj - xi) * (point[1] - yi)) / ((yj - yi) || Number.EPSILON) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function formatCountyName(rawName) {
+  const name = String(rawName || '').trim();
+  if (!name) return '';
+  return name.toLowerCase().endsWith('county') ? name : `${name} County`;
 }
 
 // ── Util ───────────────────────────────────────────────────

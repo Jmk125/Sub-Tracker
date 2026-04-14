@@ -46,7 +46,7 @@ body {
   align-items: center;
   flex-shrink: 0;
   position: relative;
-  z-index: 10;
+  z-index: 1200;
 }
 
 .header-inner {
@@ -142,7 +142,7 @@ body {
   border-radius: var(--radius);
   padding: 6px;
   box-shadow: var(--shadow);
-  z-index: 20;
+  z-index: 1300;
 }
 
 .division-filter-item {
