@@ -50,6 +50,7 @@ const CSI_DIVISIONS = [
   { num: '41', name: 'Material Processing and Handling' },
   { num: '48', name: 'Electrical Power Generation' },
 ];
+const BOUNDARY_COLORS = ['#f4d03f', '#3fb0ff', '#ff7f50', '#7ed957', '#f78ff8', '#95a5a6'];
 
 app.use(express.json());
 app.use(express.static('public'));
@@ -85,6 +86,27 @@ async function geocodeAddress(fullAddress) {
 // ─── API: Get all divisions ───────────────────────────────────────────────────
 app.get('/api/divisions', (req, res) => {
   res.json(CSI_DIVISIONS);
+});
+
+app.get('/api/boundaries', (req, res) => {
+  const boundaryDir = path.join(__dirname, 'public', 'boundaries');
+  if (!fs.existsSync(boundaryDir)) return res.json([]);
+
+  const files = fs.readdirSync(boundaryDir)
+    .filter((file) => /\.(geojson|json)$/i.test(file))
+    .sort((a, b) => a.localeCompare(b));
+
+  const catalog = files.map((file, index) => {
+    const id = file.replace(/\.(geojson|json)$/i, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return {
+      id,
+      name: file.replace(/\.(geojson|json)$/i, '').replace(/[_-]+/g, ' '),
+      url: `/boundaries/${encodeURIComponent(file)}`,
+      color: BOUNDARY_COLORS[index % BOUNDARY_COLORS.length],
+    };
+  });
+
+  res.json(catalog);
 });
 
 // ─── API: Get all subcontractors ─────────────────────────────────────────────

@@ -6,7 +6,7 @@
 const state = {
   subs: [],
   divisions: [],
-  filter: { divisions: [], search: '' },
+  filter: { divisions: [], search: '', divisionMode: 'all' },
   sort: { field: 'company_name', dir: 1 },
   editingId: null,
   pendingDeleteId: null,
@@ -22,6 +22,9 @@ const state = {
   countyBordersLoaded: false,
   countyFeatures: [],
   countyFeaturesPromise: null,
+  boundaryCatalog: [],
+  activeBoundaryIds: new Set(),
+  boundaryLayers: new Map(),
   manualCoordsId: null,
   exportColumns: [],
 };
@@ -140,6 +143,8 @@ function setupFilters() {
       } else {
         state.filter.divisions = state.filter.divisions.filter((num) => num !== divNum);
       }
+      const allSelected = state.filter.divisions.length === state.divisions.length;
+      state.filter.divisionMode = allSelected ? 'all' : (state.filter.divisions.length ? 'some' : 'none');
       syncDivisionFilterUi();
     }
     renderList();
@@ -169,7 +174,9 @@ function setupFilters() {
 function getFilteredSubs() {
   let list = [...state.subs];
 
-  if (state.filter.divisions.length) {
+  if (state.filter.divisionMode === 'none') return [];
+
+  if (state.filter.divisionMode !== 'all' && state.filter.divisions.length) {
     list = list.filter((s) => getSubDivisionNums(s).some((num) => state.filter.divisions.includes(num)));
   }
 
@@ -301,17 +308,19 @@ function buildDivisionFilterOption(label, value, action = '') {
 
 function selectAllDivisions() {
   state.filter.divisions = state.divisions.map((d) => d.num);
+  state.filter.divisionMode = 'all';
   syncDivisionFilterUi();
 }
 
 function clearDivisionSelection() {
   state.filter.divisions = [];
+  state.filter.divisionMode = 'none';
   syncDivisionFilterUi();
 }
 
 function syncDivisionFilterUi() {
   const allSelected = state.divisions.length > 0 && state.filter.divisions.length === state.divisions.length;
-  const noneSelected = state.filter.divisions.length === 0;
+  const noneSelected = state.filter.divisionMode === 'none';
 
   document.querySelectorAll('#globalDivisionFilterMenu input[type="checkbox"]').forEach((input) => {
     if (input.dataset.action === 'all') input.checked = allSelected;
@@ -947,6 +956,8 @@ async function initMap() {
     await syncCountyBordersLayer();
   });
 
+  await loadBoundaryCatalog();
+  renderBoundaryList();
   await syncCountyBordersLayer();
 
   map.on('zoomend moveend', () => {
@@ -1094,6 +1105,88 @@ function renderPins() {
 
   // Update pin list
   renderMapPinList(filtered);
+}
+
+async function loadBoundaryCatalog() {
+  try {
+    state.boundaryCatalog = await api('GET', '/api/boundaries');
+  } catch (err) {
+    console.warn('Could not load custom boundary catalog:', err.message);
+    state.boundaryCatalog = [];
+  }
+}
+
+function renderBoundaryList() {
+  const container = document.getElementById('mapBoundaryList');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!state.boundaryCatalog.length) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:11px;">No custom boundary files found in /public/boundaries.</div>';
+    return;
+  }
+
+  state.boundaryCatalog.forEach((item) => {
+    const row = document.createElement('label');
+    row.className = 'map-boundary-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = state.activeBoundaryIds.has(item.id);
+    checkbox.addEventListener('change', async () => {
+      if (checkbox.checked) {
+        await addBoundaryLayer(item);
+      } else {
+        removeBoundaryLayer(item.id);
+      }
+    });
+    const text = document.createElement('span');
+    text.textContent = item.name;
+    row.appendChild(checkbox);
+    row.appendChild(text);
+    container.appendChild(row);
+  });
+}
+
+async function addBoundaryLayer(item) {
+  if (!state.mapLeaflet || state.boundaryLayers.has(item.id)) return;
+  try {
+    const res = await fetch(item.url);
+    if (!res.ok) throw new Error(`Boundary load failed (${res.status})`);
+    const geojson = await res.json();
+    const layer = L.geoJSON(geojson, {
+      style: buildBoundaryStyle(item),
+      onEachFeature: (feature, featureLayer) => {
+        const name = feature?.properties?.name || feature?.properties?.NAME;
+        if (name) featureLayer.bindTooltip(String(name), { sticky: true });
+      },
+    }).addTo(state.mapLeaflet);
+    state.boundaryLayers.set(item.id, layer);
+    state.activeBoundaryIds.add(item.id);
+  } catch (err) {
+    console.error(err);
+    window.alert(`Could not load boundary "${item.name}".`);
+    state.activeBoundaryIds.delete(item.id);
+    renderBoundaryList();
+  }
+}
+
+function removeBoundaryLayer(boundaryId) {
+  const layer = state.boundaryLayers.get(boundaryId);
+  if (layer && state.mapLeaflet && state.mapLeaflet.hasLayer(layer)) {
+    state.mapLeaflet.removeLayer(layer);
+  }
+  state.boundaryLayers.delete(boundaryId);
+  state.activeBoundaryIds.delete(boundaryId);
+}
+
+function buildBoundaryStyle(item) {
+  const color = item.color || '#f4d03f';
+  return {
+    color,
+    weight: 2,
+    opacity: 0.95,
+    fillOpacity: 0.02,
+  };
 }
 
 function renderMapLegend(filtered) {

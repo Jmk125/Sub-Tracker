@@ -428,6 +428,7 @@ body {
 }
 
 .map-legend h3,
+.map-boundaries h3,
 .map-pin-list h3 {
   font-family: var(--font-display);
   font-size: 12px;
@@ -472,6 +473,21 @@ body {
 .pin-list-item:hover { color: var(--accent); }
 
 .pin-list-name { font-weight: 600; color: var(--text); }
+
+.map-boundary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.map-boundary-item input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
 
 #map-area {
   flex: 1;
