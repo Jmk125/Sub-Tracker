@@ -1180,12 +1180,11 @@ function removeBoundaryLayer(boundaryId) {
 }
 
 function buildBoundaryStyle(item) {
-  const color = item.color || '#f4d03f';
   return {
-    color,
-    weight: 2,
-    opacity: 0.95,
-    fillOpacity: 0.02,
+    color: '#000000',
+    weight: 3.5,
+    opacity: 1,
+    fillOpacity: 0.01,
   };
 }
 
