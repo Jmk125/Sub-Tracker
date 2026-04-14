@@ -6,7 +6,7 @@
 const state = {
   subs: [],
   divisions: [],
-  filter: { division: 'all', search: '' },
+  filter: { divisions: [], search: '', divisionMode: 'all' },
   sort: { field: 'company_name', dir: 1 },
   editingId: null,
   pendingDeleteId: null,
@@ -20,6 +20,11 @@ const state = {
   showCountyBorders: false,
   mapCountyLayer: null,
   countyBordersLoaded: false,
+  countyFeatures: [],
+  countyFeaturesPromise: null,
+  boundaryCatalog: [],
+  activeBoundaryIds: new Set(),
+  boundaryLayers: new Map(),
   manualCoordsId: null,
   exportColumns: [],
 };
@@ -56,6 +61,11 @@ const divColorMap = {};
 // ── Init ───────────────────────────────────────────────────
 async function init() {
   await loadDivisions();
+  try {
+    await ensureCountyFeaturesLoaded();
+  } catch (err) {
+    console.warn('County features could not be preloaded:', err.message);
+  }
   await loadSubs();
   state.exportColumns = EXPORT_FIELDS.map(field => field.key);
   setupTabs();
@@ -87,14 +97,8 @@ async function loadDivisions() {
     divColorMap[d.num] = DIVISION_COLORS[i % DIVISION_COLORS.length];
   });
 
-  // Populate global filter
-  const globalSel = document.getElementById('globalDivisionFilter');
-  state.divisions.forEach(d => {
-    const opt = document.createElement('option');
-    opt.value = d.num;
-    opt.textContent = `Div ${d.num} — ${d.name}`;
-    globalSel.appendChild(opt);
-  });
+  renderGlobalDivisionFilterMenu();
+  selectAllDivisions();
 
   setDivisionSelections([state.divisions[0]?.num].filter(Boolean));
 }
@@ -102,6 +106,7 @@ async function loadDivisions() {
 async function loadSubs() {
   state.subs = await api('GET', '/api/subcontractors');
   renderList();
+  renderDataTab();
   if (state.mapReady) renderPins();
   updateBadge();
 }
@@ -125,10 +130,26 @@ function setupTabs() {
 
 // ── Filters & Sort ─────────────────────────────────────────
 function setupFilters() {
-  document.getElementById('globalDivisionFilter').addEventListener('change', e => {
-    state.filter.division = e.target.value;
+  document.getElementById('globalDivisionFilterMenu').addEventListener('change', (e) => {
+    if (!(e.target instanceof HTMLInputElement) || e.target.type !== 'checkbox') return;
+    if (e.target.dataset.action === 'all') {
+      selectAllDivisions();
+    } else if (e.target.dataset.action === 'none') {
+      clearDivisionSelection();
+    } else {
+      const divNum = e.target.value;
+      if (e.target.checked) {
+        if (!state.filter.divisions.includes(divNum)) state.filter.divisions.push(divNum);
+      } else {
+        state.filter.divisions = state.filter.divisions.filter((num) => num !== divNum);
+      }
+      const allSelected = state.filter.divisions.length === state.divisions.length;
+      state.filter.divisionMode = allSelected ? 'all' : (state.filter.divisions.length ? 'some' : 'none');
+      syncDivisionFilterUi();
+    }
     renderList();
     if (state.mapReady) renderPins();
+    renderDataTab();
   });
 
   document.getElementById('searchInput').addEventListener('input', e => {
@@ -153,8 +174,10 @@ function setupFilters() {
 function getFilteredSubs() {
   let list = [...state.subs];
 
-  if (state.filter.division !== 'all') {
-    list = list.filter(s => getSubDivisionNums(s).includes(state.filter.division));
+  if (state.filter.divisionMode === 'none') return [];
+
+  if (state.filter.divisionMode !== 'all' && state.filter.divisions.length) {
+    list = list.filter((s) => getSubDivisionNums(s).some((num) => state.filter.divisions.includes(num)));
   }
 
   if (state.filter.search) {
@@ -252,8 +275,115 @@ function renderList() {
   updateBadge();
 }
 
+function renderGlobalDivisionFilterMenu() {
+  const menu = document.getElementById('globalDivisionFilterMenu');
+  menu.innerHTML = '';
+  const rows = [
+    { label: 'All', value: '__all__', action: 'all' },
+    { label: 'None', value: '__none__', action: 'none' },
+  ];
+
+  rows.forEach((row) => {
+    menu.appendChild(buildDivisionFilterOption(row.label, row.value, row.action));
+  });
+
+  state.divisions.forEach((d) => {
+    menu.appendChild(buildDivisionFilterOption(`Div ${d.num} — ${d.name}`, d.num));
+  });
+}
+
+function buildDivisionFilterOption(label, value, action = '') {
+  const row = document.createElement('label');
+  row.className = 'division-filter-item';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.value = value;
+  if (action) checkbox.dataset.action = action;
+  const text = document.createElement('span');
+  text.textContent = label;
+  row.appendChild(checkbox);
+  row.appendChild(text);
+  return row;
+}
+
+function selectAllDivisions() {
+  state.filter.divisions = state.divisions.map((d) => d.num);
+  state.filter.divisionMode = 'all';
+  syncDivisionFilterUi();
+}
+
+function clearDivisionSelection() {
+  state.filter.divisions = [];
+  state.filter.divisionMode = 'none';
+  syncDivisionFilterUi();
+}
+
+function syncDivisionFilterUi() {
+  const allSelected = state.divisions.length > 0 && state.filter.divisions.length === state.divisions.length;
+  const noneSelected = state.filter.divisionMode === 'none';
+
+  document.querySelectorAll('#globalDivisionFilterMenu input[type="checkbox"]').forEach((input) => {
+    if (input.dataset.action === 'all') input.checked = allSelected;
+    else if (input.dataset.action === 'none') input.checked = noneSelected;
+    else input.checked = state.filter.divisions.includes(input.value);
+  });
+
+  const summary = document.getElementById('globalDivisionFilterSummary');
+  if (noneSelected) {
+    summary.textContent = 'No Divisions';
+  } else if (allSelected) {
+    summary.textContent = 'All Divisions';
+  } else {
+    summary.textContent = `${state.filter.divisions.length} Division${state.filter.divisions.length === 1 ? '' : 's'} Selected`;
+  }
+}
+
 function updateBadge() {
   document.getElementById('subCount').textContent = state.subs.length;
+}
+
+function renderDataTab() {
+  renderDivisionData();
+  renderCountyData();
+}
+
+function renderDivisionData() {
+  const rows = state.divisions.map((division) => {
+    const count = state.subs.filter((sub) => getSubDivisionNums(sub).includes(division.num)).length;
+    return { label: `Div ${division.num} — ${division.name}`, count };
+  }).filter((row) => row.count > 0).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+  document.getElementById('divisionDataSummary').textContent = `${state.subs.length} contractors total`;
+  renderDataTable('divisionDataTable', 'Division', rows);
+}
+
+function renderCountyData() {
+  const map = new Map();
+  state.subs.forEach((sub) => {
+    const county = getSubCounty(sub);
+    map.set(county, (map.get(county) || 0) + 1);
+  });
+  const rows = [...map.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+  document.getElementById('countyDataSummary').textContent = `${rows.length} counties represented`;
+  renderDataTable('countyDataTable', 'County', rows);
+}
+
+function renderDataTable(containerId, headerLabel, rows) {
+  const container = document.getElementById(containerId);
+  if (!rows.length) {
+    container.innerHTML = '<div class="data-empty">No data available yet.</div>';
+    return;
+  }
+  const tableRows = rows.map((row) => `<tr><td>${escHtml(row.label)}</td><td>${row.count}</td></tr>`).join('');
+  container.innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>${escHtml(headerLabel)}</th><th>Contractors</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  `;
 }
 
 // ── Modal: Add/Edit ────────────────────────────────────────
@@ -826,11 +956,12 @@ async function initMap() {
     await syncCountyBordersLayer();
   });
 
+  await loadBoundaryCatalog();
+  renderBoundaryList();
   await syncCountyBordersLayer();
 
   map.on('zoomend moveend', () => {
-    const tooltip = document.getElementById('mapTooltip');
-    tooltip.style.display = 'none';
+    hideMapHoverTooltip();
   });
   state.mapReady = true;
   renderPins();
@@ -849,17 +980,10 @@ async function syncCountyBordersLayer() {
 
   if (!state.countyBordersLoaded) {
     try {
-      const res = await fetch(COUNTY_GEOJSON_URL);
-      if (!res.ok) throw new Error(`County boundary request failed (${res.status})`);
-      const geojson = await res.json();
-      const ohioFeatures = (geojson.features || []).filter(feature => {
-        const countyId = String(feature.id || '');
-        return countyId.startsWith('39');
-      });
-
+      await ensureCountyFeaturesLoaded();
       state.mapCountyLayer = L.geoJSON({
         type: 'FeatureCollection',
-        features: ohioFeatures,
+        features: state.countyFeatures,
       }, {
         style: {
           color: '#5f6f8f',
@@ -886,6 +1010,26 @@ async function syncCountyBordersLayer() {
   }
 }
 
+async function ensureCountyFeaturesLoaded() {
+  if (state.countyFeatures.length) return state.countyFeatures;
+  if (state.countyFeaturesPromise) return state.countyFeaturesPromise;
+
+  state.countyFeaturesPromise = fetch(COUNTY_GEOJSON_URL)
+    .then((res) => {
+      if (!res.ok) throw new Error(`County boundary request failed (${res.status})`);
+      return res.json();
+    })
+    .then((geojson) => {
+      state.countyFeatures = (geojson.features || []).filter((feature) => String(feature.id || '').startsWith('39'));
+      return state.countyFeatures;
+    })
+    .finally(() => {
+      state.countyFeaturesPromise = null;
+    });
+
+  return state.countyFeaturesPromise;
+}
+
 function renderPins() {
   if (!state.mapReady || !state.mapLeaflet || !state.mapLayerGroup) return;
 
@@ -896,7 +1040,7 @@ function renderPins() {
   state.highlightedPinId = null;
 
   // Update sidebar stats
-  const visibleCities = new Set();
+  const visibleCounties = new Set();
 
   filtered.forEach(sub => {
     const primaryDivision = getSubDivisionNums(sub)[0];
@@ -912,7 +1056,8 @@ function renderPins() {
     marker.bindTooltip(`
       <strong>${escHtml(sub.company_name)}</strong><br>
       ${renderDivisionTooltip(sub)}<br>
-      ${escHtml([sub.city, sub.state].filter(Boolean).join(', '))}
+      ${escHtml([sub.city, sub.state].filter(Boolean).join(', '))}<br>
+      <em>Click pin for more info</em>
     `, {
       direction: 'top',
       offset: [0, -8],
@@ -926,6 +1071,15 @@ function renderPins() {
 
     marker.addTo(state.mapLayerGroup);
     state.mapPinLookup.set(sub._id, { marker, baseColor: color });
+    marker.on('mouseover', (evt) => {
+      showMapHoverTooltip(sub, evt.originalEvent);
+    });
+    marker.on('mousemove', (evt) => {
+      showMapHoverTooltip(sub, evt.originalEvent);
+    });
+    marker.on('mouseout', () => {
+      hideMapHoverTooltip();
+    });
 
     if (state.showCoverageRadius) {
       L.circle([sub.lat, sub.lng], {
@@ -939,18 +1093,117 @@ function renderPins() {
       }).addTo(state.mapLayerGroup);
     }
 
-    if (sub.city) visibleCities.add(sub.city.toLowerCase());
+    visibleCounties.add(getSubCounty(sub).toLowerCase());
   });
 
   // Update sidebar stats
   document.getElementById('mapSubCount').textContent = filtered.length;
-  document.getElementById('mapCountyCount').textContent = visibleCities.size;
+  document.getElementById('mapCountyCount').textContent = visibleCounties.size;
 
   // Update legend
   renderMapLegend(filtered);
 
   // Update pin list
   renderMapPinList(filtered);
+}
+
+async function loadBoundaryCatalog() {
+  try {
+    state.boundaryCatalog = await api('GET', '/api/boundaries');
+  } catch (err) {
+    console.warn('Could not load custom boundary catalog:', err.message);
+    state.boundaryCatalog = [];
+  }
+}
+
+function renderBoundaryList() {
+  const container = document.getElementById('mapBoundaryList');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!state.boundaryCatalog.length) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:11px;">No custom boundary files found in /public/boundaries.</div>';
+    return;
+  }
+
+  state.boundaryCatalog.forEach((item) => {
+    const row = document.createElement('label');
+    row.className = 'map-boundary-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = state.activeBoundaryIds.has(item.id);
+    checkbox.addEventListener('change', async () => {
+      if (checkbox.checked) {
+        await addBoundaryLayer(item);
+      } else {
+        removeBoundaryLayer(item.id);
+      }
+    });
+    const text = document.createElement('span');
+    text.textContent = item.name;
+    row.appendChild(checkbox);
+    row.appendChild(text);
+    container.appendChild(row);
+  });
+}
+
+async function addBoundaryLayer(item) {
+  if (!state.mapLeaflet || state.boundaryLayers.has(item.id)) return;
+  try {
+    const res = await fetch(item.url);
+    if (!res.ok) throw new Error(`Boundary load failed (${res.status})`);
+    const geojson = await res.json();
+    const layer = L.geoJSON(geojson, {
+      style: buildBoundaryStyle(item),
+      pointToLayer: (feature, latlng) => {
+        const label = getBoundaryFeatureLabel(feature);
+        return L.marker(latlng, {
+          icon: L.divIcon({
+            className: 'boundary-point-label-wrap',
+            html: `<div class="boundary-point-label">${escHtml(label)}</div>`,
+            iconSize: null,
+          }),
+          keyboard: false,
+        });
+      },
+      onEachFeature: (feature, featureLayer) => {
+        const name = getBoundaryFeatureLabel(feature);
+        if (name) featureLayer.bindTooltip(String(name), { sticky: true });
+      },
+    }).addTo(state.mapLeaflet);
+    state.boundaryLayers.set(item.id, layer);
+    state.activeBoundaryIds.add(item.id);
+  } catch (err) {
+    console.error(err);
+    window.alert(`Could not load boundary "${item.name}".`);
+    state.activeBoundaryIds.delete(item.id);
+    renderBoundaryList();
+  }
+}
+
+function removeBoundaryLayer(boundaryId) {
+  const layer = state.boundaryLayers.get(boundaryId);
+  if (layer && state.mapLeaflet && state.mapLeaflet.hasLayer(layer)) {
+    state.mapLeaflet.removeLayer(layer);
+  }
+  state.boundaryLayers.delete(boundaryId);
+  state.activeBoundaryIds.delete(boundaryId);
+}
+
+function buildBoundaryStyle(item) {
+  return {
+    color: '#000000',
+    weight: 3.5,
+    opacity: 1,
+    fillOpacity: 0.01,
+  };
+}
+
+function getBoundaryFeatureLabel(feature) {
+  const props = feature?.properties || {};
+  const name = props.name || props.NAME || props.label || props.LABEL || 'Label';
+  const labelType = props.label_type || props.labelType || props.TYPE || '';
+  return labelType ? `${name} (${labelType})` : name;
 }
 
 function renderMapLegend(filtered) {
@@ -1004,6 +1257,9 @@ function renderMapPinList(filtered) {
     });
     item.addEventListener('mouseenter', () => setMapPinHighlight(sub._id));
     item.addEventListener('mouseleave', () => setMapPinHighlight(null));
+    item.addEventListener('mouseenter', (evt) => showMapHoverTooltip(sub, evt));
+    item.addEventListener('mousemove', (evt) => showMapHoverTooltip(sub, evt));
+    item.addEventListener('mouseleave', hideMapHoverTooltip);
     container.appendChild(item);
   });
 }
@@ -1052,6 +1308,38 @@ function buildMapPopup(sub) {
   `;
 }
 
+function buildMapHoverTooltipHtml(sub) {
+  const cityState = [sub.city, sub.state].filter(Boolean).join(', ');
+  return `
+    <strong>${escHtml(sub.company_name)}</strong>
+    <div class="tt-div">${renderDivisionTooltip(sub)}</div>
+    ${cityState ? `<div class="tt-addr">${escHtml(cityState)}</div>` : ''}
+    <div class="tt-tip">Click pin for more info</div>
+  `;
+}
+
+function showMapHoverTooltip(sub, event) {
+  const tooltip = document.getElementById('mapTooltip');
+  if (!tooltip) return;
+  tooltip.innerHTML = buildMapHoverTooltipHtml(sub);
+  tooltip.style.display = 'block';
+
+  const mapArea = document.getElementById('map-area');
+  const mapAreaRect = mapArea.getBoundingClientRect();
+  const pageX = event?.clientX ?? (mapAreaRect.left + 20);
+  const pageY = event?.clientY ?? (mapAreaRect.top + 20);
+  const left = Math.min(pageX - mapAreaRect.left + 14, mapArea.clientWidth - tooltip.offsetWidth - 8);
+  const top = Math.min(pageY - mapAreaRect.top + 14, mapArea.clientHeight - tooltip.offsetHeight - 8);
+  tooltip.style.left = `${Math.max(8, left)}px`;
+  tooltip.style.top = `${Math.max(8, top)}px`;
+}
+
+function hideMapHoverTooltip() {
+  const tooltip = document.getElementById('mapTooltip');
+  if (!tooltip) return;
+  tooltip.style.display = 'none';
+}
+
 function getSubDivisionNums(sub) {
   if (Array.isArray(sub.division_nums) && sub.division_nums.length) return sub.division_nums;
   return sub.division_num ? [sub.division_num] : [];
@@ -1080,6 +1368,65 @@ function renderDivisionTooltip(sub) {
       return `Div ${num} — ${escHtml(div?.name || '')}`;
     })
     .join('<br>');
+}
+
+function getSubCounty(sub) {
+  const county = (sub.county || '').trim();
+  if (county) return county.toLowerCase().endsWith('county') ? county : `${county} County`;
+  const inferredCounty = inferCountyFromCoordinates(sub.lat, sub.lng);
+  if (inferredCounty) return inferredCounty;
+  return 'Unknown';
+}
+
+function inferCountyFromCoordinates(lat, lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !state.countyFeatures.length) return '';
+  const point = [lng, lat];
+  for (const feature of state.countyFeatures) {
+    if (geometryContainsPoint(feature.geometry, point)) {
+      return formatCountyName(feature.properties?.NAME || feature.properties?.name || '');
+    }
+  }
+  return '';
+}
+
+function geometryContainsPoint(geometry, point) {
+  if (!geometry) return false;
+  if (geometry.type === 'Polygon') {
+    return polygonContainsPoint(geometry.coordinates, point);
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates.some((polygon) => polygonContainsPoint(polygon, point));
+  }
+  return false;
+}
+
+function polygonContainsPoint(rings, point) {
+  if (!Array.isArray(rings) || !rings.length) return false;
+  if (!ringContainsPoint(rings[0], point)) return false;
+  for (let i = 1; i < rings.length; i += 1) {
+    if (ringContainsPoint(rings[i], point)) return false;
+  }
+  return true;
+}
+
+function ringContainsPoint(ring, point) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    const intersects = ((yi > point[1]) !== (yj > point[1]))
+      && (point[0] < ((xj - xi) * (point[1] - yi)) / ((yj - yi) || Number.EPSILON) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function formatCountyName(rawName) {
+  const name = String(rawName || '').trim();
+  if (!name) return '';
+  return name.toLowerCase().endsWith('county') ? name : `${name} County`;
 }
 
 // ── Util ───────────────────────────────────────────────────
