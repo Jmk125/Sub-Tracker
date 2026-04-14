@@ -50,13 +50,63 @@ const CSI_DIVISIONS = [
   { num: '41', name: 'Material Processing and Handling' },
   { num: '48', name: 'Electrical Power Generation' },
 ];
+const BOUNDARY_COLORS = ['#f4d03f', '#3fb0ff', '#ff7f50', '#7ed957', '#f78ff8', '#95a5a6'];
 
 app.use(express.json());
 app.use(express.static('public'));
 
+function extractCountyFromAddress(address) {
+  if (!address || typeof address !== 'object') return '';
+  const county = address.county || address.state_district || '';
+  return String(county || '').replace(/\s+County$/i, '').trim();
+}
+
+async function geocodeAddress(fullAddress) {
+  if (!fullAddress.trim()) {
+    return { lat: null, lng: null, county: '' };
+  }
+
+  const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(fullAddress)}&limit=1&countrycodes=us`;
+  const geoRes = await fetch(geoUrl, {
+    headers: { 'User-Agent': 'SubTrackerApp/1.0 (construction-internal)' }
+  });
+  const geoData = await geoRes.json();
+
+  if (!Array.isArray(geoData) || geoData.length === 0) {
+    return { lat: null, lng: null, county: '' };
+  }
+
+  return {
+    lat: parseFloat(geoData[0].lat),
+    lng: parseFloat(geoData[0].lon),
+    county: extractCountyFromAddress(geoData[0].address),
+  };
+}
+
 // ─── API: Get all divisions ───────────────────────────────────────────────────
 app.get('/api/divisions', (req, res) => {
   res.json(CSI_DIVISIONS);
+});
+
+app.get('/api/boundaries', (req, res) => {
+  const boundaryDir = path.join(__dirname, 'public', 'boundaries');
+  if (!fs.existsSync(boundaryDir)) return res.json([]);
+
+  const files = fs.readdirSync(boundaryDir)
+    .filter((file) => /\.(geojson|json)$/i.test(file))
+    .sort((a, b) => a.localeCompare(b));
+
+  const catalog = files.map((file, index) => {
+    const id = file.replace(/\.(geojson|json)$/i, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return {
+      id,
+      name: file.replace(/\.(geojson|json)$/i, '').replace(/[_-]+/g, ' '),
+      url: `/boundaries/${encodeURIComponent(file)}`,
+      color: BOUNDARY_COLORS[index % BOUNDARY_COLORS.length],
+    };
+  });
+
+  res.json(catalog);
 });
 
 // ─── API: Get all subcontractors ─────────────────────────────────────────────
@@ -82,19 +132,14 @@ app.post('/api/subcontractors', async (req, res) => {
   }
 
   // Geocode the address
-  let lat = null, lng = null;
+  let lat = null, lng = null, county = '';
   const fullAddress = [address, city, state || 'OH', zip].filter(Boolean).join(', ');
   if (fullAddress.trim()) {
     try {
-      const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddress)}&limit=1&countrycodes=us`;
-      const geoRes = await fetch(geoUrl, {
-        headers: { 'User-Agent': 'SubTrackerApp/1.0 (construction-internal)' }
-      });
-      const geoData = await geoRes.json();
-      if (geoData.length > 0) {
-        lat = parseFloat(geoData[0].lat);
-        lng = parseFloat(geoData[0].lon);
-      }
+      const geo = await geocodeAddress(fullAddress);
+      lat = geo.lat;
+      lng = geo.lng;
+      county = geo.county;
     } catch (e) {
       console.warn('Geocoding failed:', e.message);
     }
@@ -122,6 +167,7 @@ app.post('/api/subcontractors', async (req, res) => {
     notes: notes || '',
     lat,
     lng,
+    county,
     created_at: new Date().toISOString()
   };
 
@@ -149,15 +195,12 @@ app.put('/api/subcontractors/:id', async (req, res) => {
   if (updates.address || updates.city || updates.zip) {
     const fullAddress = [updates.address, updates.city, updates.state || 'OH', updates.zip].filter(Boolean).join(', ');
     try {
-      const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddress)}&limit=1&countrycodes=us`;
-      const geoRes = await fetch(geoUrl, {
-        headers: { 'User-Agent': 'SubTrackerApp/1.0 (construction-internal)' }
-      });
-      const geoData = await geoRes.json();
-      if (geoData.length > 0) {
-        updates.lat = parseFloat(geoData[0].lat);
-        updates.lng = parseFloat(geoData[0].lon);
+      const geo = await geocodeAddress(fullAddress);
+      if (Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+        updates.lat = geo.lat;
+        updates.lng = geo.lng;
       }
+      updates.county = geo.county || '';
     } catch (e) {
       console.warn('Geocoding failed:', e.message);
     }
@@ -191,16 +234,10 @@ app.post('/api/subcontractors/:id/geocode', async (req, res) => {
     if (err || !doc) return res.status(404).json({ error: 'Not found' });
     const fullAddress = [doc.address, doc.city, doc.state || 'OH', doc.zip].filter(Boolean).join(', ');
     try {
-      const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddress)}&limit=1&countrycodes=us`;
-      const geoRes = await fetch(geoUrl, {
-        headers: { 'User-Agent': 'SubTrackerApp/1.0 (construction-internal)' }
-      });
-      const geoData = await geoRes.json();
-      if (geoData.length > 0) {
-        const lat = parseFloat(geoData[0].lat);
-        const lng = parseFloat(geoData[0].lon);
-        db.update({ _id: req.params.id }, { $set: { lat, lng } }, {}, () => {
-          res.json({ lat, lng });
+      const geo = await geocodeAddress(fullAddress);
+      if (Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+        db.update({ _id: req.params.id }, { $set: { lat: geo.lat, lng: geo.lng, county: geo.county || '' } }, {}, () => {
+          res.json({ lat: geo.lat, lng: geo.lng, county: geo.county || '' });
         });
       } else {
         res.status(404).json({ error: 'Could not geocode address' });

@@ -46,7 +46,7 @@ body {
   align-items: center;
   flex-shrink: 0;
   position: relative;
-  z-index: 10;
+  z-index: 1200;
 }
 
 .header-inner {
@@ -111,6 +111,52 @@ body {
   color: var(--text-dim);
   white-space: nowrap;
 }
+
+.division-filter-dropdown {
+  position: relative;
+  min-width: 220px;
+}
+
+.division-filter-dropdown summary {
+  list-style: none;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.division-filter-dropdown summary::-webkit-details-marker { display: none; }
+.division-filter-dropdown[open] summary { border-color: var(--accent); }
+
+.division-filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 6px;
+  box-shadow: var(--shadow);
+  z-index: 1300;
+}
+
+.division-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.division-filter-item:hover { background: var(--bg3); }
+.division-filter-item input { width: auto; }
 
 /* ── Tabs ────────────────────────────────────────────────── */
 #tabs {
@@ -382,6 +428,7 @@ body {
 }
 
 .map-legend h3,
+.map-boundaries h3,
 .map-pin-list h3 {
   font-family: var(--font-display);
   font-size: 12px;
@@ -426,6 +473,41 @@ body {
 .pin-list-item:hover { color: var(--accent); }
 
 .pin-list-name { font-weight: 600; color: var(--text); }
+
+.map-boundary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.map-boundary-item input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+.boundary-point-label-wrap {
+  background: transparent;
+  border: 0;
+}
+
+.boundary-point-label {
+  position: relative;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  border: 1px solid #000;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
 
 #map-area {
   flex: 1;
@@ -519,6 +601,14 @@ body {
 
 .map-tooltip .tt-div { color: var(--accent); font-size: 11px; font-weight: 600; }
 .map-tooltip .tt-addr { color: var(--text-dim); margin-top: 3px; }
+.map-tooltip .tt-tip {
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
 
 .map-bottom-controls {
   position: absolute;
@@ -596,6 +686,67 @@ body {
 
 .leaflet-popup-content {
   margin: 10px 12px;
+}
+
+/* ── Data Tab ───────────────────────────────────────────── */
+.data-panel-wrap {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.data-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.data-panel h3 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.data-summary {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.data-table td:last-child,
+.data-table th:last-child {
+  text-align: right;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.data-empty {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 /* ── Forms / Inputs ──────────────────────────────────────── */
