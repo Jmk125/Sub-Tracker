@@ -10,5 +10,8 @@ The map tab will automatically show each file as a checkbox under **Boundaries**
 - Optional feature property names:
   - `name`
   - `NAME`
+  - `label_type` (optional suffix shown in parentheses)
 
 If present, the name is shown as a tooltip on hover.
+
+Point features are rendered as text label boxes on the map (instead of default map pins).

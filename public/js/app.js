@@ -1155,8 +1155,19 @@ async function addBoundaryLayer(item) {
     const geojson = await res.json();
     const layer = L.geoJSON(geojson, {
       style: buildBoundaryStyle(item),
+      pointToLayer: (feature, latlng) => {
+        const label = getBoundaryFeatureLabel(feature);
+        return L.marker(latlng, {
+          icon: L.divIcon({
+            className: 'boundary-point-label-wrap',
+            html: `<div class="boundary-point-label">${escHtml(label)}</div>`,
+            iconSize: null,
+          }),
+          keyboard: false,
+        });
+      },
       onEachFeature: (feature, featureLayer) => {
-        const name = feature?.properties?.name || feature?.properties?.NAME;
+        const name = getBoundaryFeatureLabel(feature);
         if (name) featureLayer.bindTooltip(String(name), { sticky: true });
       },
     }).addTo(state.mapLeaflet);
@@ -1186,6 +1197,13 @@ function buildBoundaryStyle(item) {
     opacity: 1,
     fillOpacity: 0.01,
   };
+}
+
+function getBoundaryFeatureLabel(feature) {
+  const props = feature?.properties || {};
+  const name = props.name || props.NAME || props.label || props.LABEL || 'Label';
+  const labelType = props.label_type || props.labelType || props.TYPE || '';
+  return labelType ? `${name} (${labelType})` : name;
 }
 
 function renderMapLegend(filtered) {

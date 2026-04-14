@@ -489,6 +489,24 @@ body {
   accent-color: var(--accent);
 }
 
+.boundary-point-label-wrap {
+  background: transparent;
+  border: 0;
+}
+
+.boundary-point-label {
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  border: 1px solid #000;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
 #map-area {
   flex: 1;
   position: relative;
