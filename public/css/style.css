@@ -492,10 +492,11 @@ body {
 .boundary-point-label-wrap {
   background: transparent;
   border: 0;
-  transform: translate(-50%, -50%);
 }
 
 .boundary-point-label {
+  position: relative;
+  transform: translate(-50%, -50%);
   background: rgba(0, 0, 0, 0.9);
   color: #fff;
   border: 1px solid #000;
