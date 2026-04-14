@@ -25,6 +25,7 @@ const state = {
   boundaryCatalog: [],
   activeBoundaryIds: new Set(),
   boundaryLayers: new Map(),
+  tempPinMarker: null,
   manualCoordsId: null,
   exportColumns: [],
 };
@@ -907,6 +908,88 @@ function parseLatLng(value) {
   return [parseFloat(parts[0]), parseFloat(parts[1])];
 }
 
+function setupTempPinControls() {
+  const btnAdd = document.getElementById('btnAddProjectPin');
+  const btnClear = document.getElementById('btnClearProjectPin');
+  if (!btnAdd || !btnClear) return;
+
+  btnAdd.addEventListener('click', addTemporaryProjectPin);
+  btnClear.addEventListener('click', clearTemporaryProjectPin);
+}
+
+async function addTemporaryProjectPin() {
+  if (!state.mapLeaflet) return;
+  const address = document.getElementById('projectPinAddress').value.trim();
+  const coordsRaw = document.getElementById('projectPinCoords').value.trim();
+
+  let lat = NaN;
+  let lng = NaN;
+
+  if (address) {
+    try {
+      const geo = await api('POST', '/api/geocode-address', { address });
+      lat = parseFloat(geo.lat);
+      lng = parseFloat(geo.lng);
+      setProjectPinStatus('Pinned from address.', 'ok');
+    } catch (err) {
+      // fall through to coordinate parsing
+    }
+  }
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    const parsed = parseLatLng(coordsRaw);
+    lat = parsed[0];
+    lng = parsed[1];
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      setProjectPinStatus(address ? 'Address failed; used coordinates fallback.' : 'Pinned from coordinates.', 'warn');
+    }
+  }
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    setProjectPinStatus('Enter a valid address or coordinates (lat, lng).', 'error');
+    return;
+  }
+
+  placeTemporaryProjectPin(lat, lng, address || coordsRaw || 'Temporary Pin');
+}
+
+function placeTemporaryProjectPin(lat, lng, label) {
+  if (!state.mapLeaflet) return;
+  if (state.tempPinMarker && state.mapLeaflet.hasLayer(state.tempPinMarker)) {
+    state.mapLeaflet.removeLayer(state.tempPinMarker);
+  }
+
+  state.tempPinMarker = L.marker([lat, lng], {
+    title: 'Temporary Project Pin',
+  }).addTo(state.mapLeaflet);
+  state.tempPinMarker.bindPopup(`
+    <div>
+      <strong>Temporary Project Pin</strong><br>
+      ${escHtml(label)}<br>
+      ${lat.toFixed(6)}, ${lng.toFixed(6)}
+    </div>
+  `);
+  state.tempPinMarker.openPopup();
+  state.mapLeaflet.setView([lat, lng], Math.max(state.mapLeaflet.getZoom(), 11));
+}
+
+function clearTemporaryProjectPin() {
+  if (state.tempPinMarker && state.mapLeaflet && state.mapLeaflet.hasLayer(state.tempPinMarker)) {
+    state.mapLeaflet.removeLayer(state.tempPinMarker);
+  }
+  state.tempPinMarker = null;
+  document.getElementById('projectPinAddress').value = '';
+  document.getElementById('projectPinCoords').value = '';
+  setProjectPinStatus('Temporary pin cleared.', 'ok');
+}
+
+function setProjectPinStatus(message, type = 'ok') {
+  const el = document.getElementById('projectPinStatus');
+  if (!el) return;
+  el.textContent = message;
+  el.dataset.type = type;
+}
+
 // ── MAP ────────────────────────────────────────────────────
 async function initMap() {
   const map = L.map('ohioMap', {
@@ -956,6 +1039,7 @@ async function initMap() {
     state.showCountyBorders = countyToggle.checked;
     await syncCountyBordersLayer();
   });
+  setupTempPinControls();
 
   await loadBoundaryCatalog();
   renderBoundaryList();

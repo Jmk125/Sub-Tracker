@@ -547,6 +547,7 @@ body {
 }
 
 .map-btn:hover { background: var(--bg3); color: var(--accent); }
+.map-btn-inline { width: auto; min-width: 68px; height: 30px; font-size: 11px; padding: 0 10px; }
 
 /* Map SVG elements */
 .county-path {
@@ -625,6 +626,30 @@ body {
   padding: 5px 8px;
   backdrop-filter: blur(2px);
 }
+
+.temp-pin-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#projectPinAddress,
+#projectPinCoords {
+  width: 220px;
+  min-width: 180px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.project-pin-status {
+  color: var(--text-dim);
+  font-size: 11px;
+  max-width: 220px;
+}
+.project-pin-status[data-type="error"] { color: #f87171; }
+.project-pin-status[data-type="warn"] { color: #fbbf24; }
+.project-pin-status[data-type="ok"] { color: var(--success); }
 
 .map-bottom-controls label {
   font-size: 11px;

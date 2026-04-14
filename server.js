@@ -109,6 +109,20 @@ app.get('/api/boundaries', (req, res) => {
   res.json(catalog);
 });
 
+app.post('/api/geocode-address', async (req, res) => {
+  const address = String(req.body?.address || '').trim();
+  if (!address) return res.status(400).json({ error: 'Address is required.' });
+  try {
+    const geo = await geocodeAddress(address);
+    if (!Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) {
+      return res.status(404).json({ error: 'Could not geocode that address.' });
+    }
+    res.json(geo);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── API: Get all subcontractors ─────────────────────────────────────────────
 app.get('/api/subcontractors', (req, res) => {
   const { division } = req.query;
