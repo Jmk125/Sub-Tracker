@@ -1162,6 +1162,7 @@ async function addBoundaryLayer(item) {
             className: 'boundary-point-label-wrap',
             html: `<div class="boundary-point-label">${escHtml(label)}</div>`,
             iconSize: null,
+            iconAnchor: [0, 0],
           }),
           keyboard: false,
         });
