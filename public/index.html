@@ -28,9 +28,10 @@
         <div class="header-controls">
           <div class="filter-bar">
             <label>Division Filter</label>
-            <select id="globalDivisionFilter">
-              <option value="all">All Divisions</option>
-            </select>
+            <details id="globalDivisionFilter" class="division-filter-dropdown">
+              <summary id="globalDivisionFilterSummary">All Divisions</summary>
+              <div id="globalDivisionFilterMenu" class="division-filter-menu"></div>
+            </details>
           </div>
           <button id="btnExportSubs" class="btn btn-ghost">⇩ Export Excel</button>
           <button id="btnAddSub" class="btn btn-primary">+ Add Subcontractor</button>
@@ -46,6 +47,9 @@
       </button>
       <button class="tab" data-tab="map">
         <span class="tab-icon">◉</span> Ohio Map
+      </button>
+      <button class="tab" data-tab="data">
+        <span class="tab-icon">▦</span> Data
       </button>
     </nav>
 
@@ -95,6 +99,10 @@
             <h3>Legend</h3>
             <div id="legendItems"></div>
           </div>
+          <div class="map-boundaries">
+            <h3>Boundaries</h3>
+            <div id="mapBoundaryList"></div>
+          </div>
           <div class="map-pin-list">
             <h3>Pins</h3>
             <div id="mapPinList"></div>
@@ -109,6 +117,13 @@
           <div id="ohioMap"></div>
           <div id="mapTooltip" class="map-tooltip"></div>
           <div class="map-bottom-controls">
+            <div class="temp-pin-controls">
+              <input id="projectPinAddress" type="text" placeholder="Project address..." />
+              <input id="projectPinCoords" type="text" placeholder="Fallback coords: 39.9612, -82.9988" />
+              <button id="btnAddProjectPin" class="map-btn map-btn-inline" type="button">Add Pin</button>
+              <button id="btnClearProjectPin" class="map-btn map-btn-inline" type="button">Clear</button>
+              <span id="projectPinStatus" class="project-pin-status"></span>
+            </div>
             <label class="radius-toggle">
               <input id="showCoverageRadius" type="checkbox" checked />
               <span>Radius</span>
@@ -123,6 +138,22 @@
             </label>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Data Tab -->
+    <div id="tab-data" class="tab-content">
+      <div class="data-panel-wrap">
+        <section class="data-panel">
+          <h3>Contractors by Division</h3>
+          <div id="divisionDataSummary" class="data-summary"></div>
+          <div id="divisionDataTable" class="data-table-wrap"></div>
+        </section>
+        <section class="data-panel">
+          <h3>Contractors by County</h3>
+          <div id="countyDataSummary" class="data-summary"></div>
+          <div id="countyDataTable" class="data-table-wrap"></div>
+        </section>
       </div>
     </div>
   </div>
