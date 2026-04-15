@@ -238,6 +238,10 @@ body {
   max-width: 360px;
 }
 
+.notes-search-wrap {
+  max-width: 300px;
+}
+
 .search-icon {
   position: absolute;
   left: 10px;
