@@ -366,26 +366,42 @@ function renderDataTab() {
 
 function renderDivisionData() {
   const rows = state.divisions.map((division) => {
-    const count = state.subs.filter((sub) => getSubDivisionNums(sub).includes(division.num)).length;
-    return { label: `Div ${division.num} — ${division.name}`, count };
+    const members = state.subs
+      .filter((sub) => getSubDivisionNums(sub).includes(division.num))
+      .map((sub) => ({ id: sub._id, name: sub.company_name || 'Unnamed contractor' }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      key: division.num,
+      label: `Div ${division.num} — ${division.name}`,
+      count: members.length,
+      members,
+    };
   }).filter((row) => row.count > 0).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
   document.getElementById('divisionDataSummary').textContent = `${state.subs.length} contractors total`;
   renderDataTable('divisionDataTable', 'Division', rows);
+  renderDataChart('divisionDataChart', rows, 'No division chart data yet.');
 }
 
 function renderCountyData() {
   const map = new Map();
   state.subs.forEach((sub) => {
     const county = getSubCounty(sub);
-    map.set(county, (map.get(county) || 0) + 1);
+    if (!map.has(county)) map.set(county, []);
+    map.get(county).push({ id: sub._id, name: sub.company_name || 'Unnamed contractor' });
   });
   const rows = [...map.entries()]
-    .map(([label, count]) => ({ label, count }))
+    .map(([label, members]) => ({
+      key: label,
+      label,
+      count: members.length,
+      members: [...members].sort((a, b) => a.name.localeCompare(b.name)),
+    }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
   document.getElementById('countyDataSummary').textContent = `${rows.length} counties represented`;
   renderDataTable('countyDataTable', 'County', rows);
+  renderDataChart('countyDataChart', rows, 'No county chart data yet.');
 }
 
 function renderDataTable(containerId, headerLabel, rows) {
@@ -394,12 +410,92 @@ function renderDataTable(containerId, headerLabel, rows) {
     container.innerHTML = '<div class="data-empty">No data available yet.</div>';
     return;
   }
-  const tableRows = rows.map((row) => `<tr><td>${escHtml(row.label)}</td><td>${row.count}</td></tr>`).join('');
+  const tableRows = rows.map((row) => {
+    const memberItems = row.members.length
+      ? row.members.map((member) => `
+        <li>
+          <button
+            type="button"
+            class="sub-link-btn"
+            data-sub-id="${escAttr(member.id)}"
+          >${escHtml(member.name)}</button>
+        </li>
+      `).join('')
+      : '<li>No contractors found.</li>';
+
+    return `
+      <tr class="expandable-row" data-key="${escAttr(row.key)}" aria-expanded="false">
+        <td>${escHtml(row.label)}</td>
+        <td>${row.count}</td>
+      </tr>
+      <tr class="expanded-content-row" data-parent-key="${escAttr(row.key)}">
+        <td colspan="2">
+          <div class="expanded-content-wrap">
+            <div class="expanded-content-title">Contractors in ${escHtml(row.label)} (${row.count})</div>
+            <ul class="expanded-sub-list">${memberItems}</ul>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
   container.innerHTML = `
     <table class="data-table">
       <thead><tr><th>${escHtml(headerLabel)}</th><th>Contractors</th></tr></thead>
       <tbody>${tableRows}</tbody>
     </table>
+  `;
+
+  let expandedKey = null;
+  container.querySelectorAll('tbody tr.expandable-row').forEach((tableRow) => {
+    tableRow.addEventListener('click', (event) => {
+      if (event.target instanceof HTMLElement && event.target.closest('.sub-link-btn')) return;
+      const nextKey = tableRow.dataset.key;
+      expandedKey = expandedKey === nextKey ? null : nextKey;
+
+      container.querySelectorAll('tbody tr.expandable-row').forEach((rowEl) => {
+        const isExpanded = rowEl.dataset.key === expandedKey;
+        rowEl.classList.toggle('selected', isExpanded);
+        rowEl.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+      });
+
+      container.querySelectorAll('tbody tr.expanded-content-row').forEach((detailRow) => {
+        detailRow.classList.toggle('is-open', detailRow.dataset.parentKey === expandedKey);
+      });
+    });
+  });
+
+  container.querySelectorAll('.sub-link-btn[data-sub-id]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openEditModal(button.dataset.subId);
+    });
+  });
+}
+
+function renderDataChart(containerId, rows, emptyMessage) {
+  const container = document.getElementById(containerId);
+  if (!rows.length) {
+    container.innerHTML = `<div class="data-empty">${escHtml(emptyMessage)}</div>`;
+    return;
+  }
+
+  const maxCount = Math.max(...rows.map((row) => row.count), 1);
+  const bars = rows.map((row) => {
+    const pct = Math.max((row.count / maxCount) * 100, 4);
+    return `
+      <div class="chart-row">
+        <div class="chart-label" title="${escAttr(row.label)}">${escHtml(row.label)}</div>
+        <div class="chart-track">
+          <div class="chart-bar" style="width:${pct}%">${row.count}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <h4>Contractor Count Chart</h4>
+    <div class="data-chart-rows">${bars}</div>
   `;
 }
 
