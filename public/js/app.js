@@ -132,6 +132,21 @@ function setupTabs() {
 
 // ── Filters & Sort ─────────────────────────────────────────
 function setupFilters() {
+  const divisionFilter = document.getElementById('globalDivisionFilter');
+  if (divisionFilter) {
+    divisionFilter.addEventListener('mouseleave', () => {
+      divisionFilter.open = false;
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!divisionFilter.open) return;
+      if (!(e.target instanceof Node)) return;
+      if (!divisionFilter.contains(e.target)) {
+        divisionFilter.open = false;
+      }
+    });
+  }
+
   document.getElementById('globalDivisionFilterMenu').addEventListener('change', (e) => {
     if (!(e.target instanceof HTMLInputElement) || e.target.type !== 'checkbox') return;
     if (e.target.dataset.action === 'all') {
