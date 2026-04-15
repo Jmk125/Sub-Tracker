@@ -366,40 +366,112 @@ function renderDataTab() {
 
 function renderDivisionData() {
   const rows = state.divisions.map((division) => {
-    const count = state.subs.filter((sub) => getSubDivisionNums(sub).includes(division.num)).length;
-    return { label: `Div ${division.num} — ${division.name}`, count };
+    const members = state.subs
+      .filter((sub) => getSubDivisionNums(sub).includes(division.num))
+      .map((sub) => sub.company_name)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    return {
+      key: division.num,
+      label: `Div ${division.num} — ${division.name}`,
+      count: members.length,
+      members,
+    };
   }).filter((row) => row.count > 0).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
   document.getElementById('divisionDataSummary').textContent = `${state.subs.length} contractors total`;
-  renderDataTable('divisionDataTable', 'Division', rows);
+  renderDataTable('divisionDataTable', 'divisionDataDetail', 'Division', rows);
+  renderDataChart('divisionDataChart', rows, 'No division chart data yet.');
 }
 
 function renderCountyData() {
   const map = new Map();
   state.subs.forEach((sub) => {
     const county = getSubCounty(sub);
-    map.set(county, (map.get(county) || 0) + 1);
+    if (!map.has(county)) map.set(county, []);
+    map.get(county).push(sub.company_name || 'Unnamed contractor');
   });
   const rows = [...map.entries()]
-    .map(([label, count]) => ({ label, count }))
+    .map(([label, members]) => ({
+      key: label,
+      label,
+      count: members.length,
+      members: [...members].sort((a, b) => a.localeCompare(b)),
+    }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
   document.getElementById('countyDataSummary').textContent = `${rows.length} counties represented`;
-  renderDataTable('countyDataTable', 'County', rows);
+  renderDataTable('countyDataTable', 'countyDataDetail', 'County', rows);
+  renderDataChart('countyDataChart', rows, 'No county chart data yet.');
 }
 
-function renderDataTable(containerId, headerLabel, rows) {
+function renderDataTable(containerId, detailContainerId, headerLabel, rows) {
   const container = document.getElementById(containerId);
+  const detail = document.getElementById(detailContainerId);
+  detail.innerHTML = '';
   if (!rows.length) {
     container.innerHTML = '<div class="data-empty">No data available yet.</div>';
     return;
   }
-  const tableRows = rows.map((row) => `<tr><td>${escHtml(row.label)}</td><td>${row.count}</td></tr>`).join('');
+  const tableRows = rows
+    .map((row) => `<tr data-key="${escAttr(row.key)}"><td>${escHtml(row.label)}</td><td>${row.count}</td></tr>`)
+    .join('');
   container.innerHTML = `
     <table class="data-table">
       <thead><tr><th>${escHtml(headerLabel)}</th><th>Contractors</th></tr></thead>
       <tbody>${tableRows}</tbody>
     </table>
+  `;
+
+  let selectedKey = null;
+  const rowMap = new Map(rows.map((row) => [String(row.key), row]));
+  container.querySelectorAll('tbody tr').forEach((tableRow) => {
+    tableRow.addEventListener('click', () => {
+      const nextKey = tableRow.dataset.key;
+      selectedKey = selectedKey === nextKey ? null : nextKey;
+
+      container.querySelectorAll('tbody tr').forEach((tr) => tr.classList.toggle('selected', tr.dataset.key === selectedKey));
+      if (!selectedKey) {
+        detail.innerHTML = '';
+        return;
+      }
+
+      const row = rowMap.get(selectedKey);
+      if (!row) return;
+      const names = row.members
+        .map((name) => `<li>${escHtml(name)}</li>`)
+        .join('');
+      detail.innerHTML = `
+        <h4>${escHtml(row.label)} contractors (${row.count})</h4>
+        <ul>${names || '<li>No contractors found.</li>'}</ul>
+      `;
+    });
+  });
+}
+
+function renderDataChart(containerId, rows, emptyMessage) {
+  const container = document.getElementById(containerId);
+  if (!rows.length) {
+    container.innerHTML = `<div class="data-empty">${escHtml(emptyMessage)}</div>`;
+    return;
+  }
+
+  const maxCount = Math.max(...rows.map((row) => row.count), 1);
+  const bars = rows.map((row) => {
+    const pct = Math.max((row.count / maxCount) * 100, 4);
+    return `
+      <div class="chart-row">
+        <div class="chart-label" title="${escAttr(row.label)}">${escHtml(row.label)}</div>
+        <div class="chart-track">
+          <div class="chart-bar" style="width:${pct}%">${row.count}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <h4>Contractor Count Chart</h4>
+    <div class="data-chart-rows">${bars}</div>
   `;
 }
 
