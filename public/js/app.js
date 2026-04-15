@@ -6,7 +6,7 @@
 const state = {
   subs: [],
   divisions: [],
-  filter: { divisions: [], search: '', divisionMode: 'all' },
+  filter: { divisions: [], search: '', notesSearch: '', divisionMode: 'all' },
   sort: { field: 'company_name', dir: 1 },
   editingId: null,
   pendingDeleteId: null,
@@ -174,6 +174,11 @@ function setupFilters() {
     renderList();
   });
 
+  document.getElementById('notesSearchInput').addEventListener('input', e => {
+    state.filter.notesSearch = e.target.value.toLowerCase();
+    renderList();
+  });
+
   document.getElementById('sortField').addEventListener('change', e => {
     state.sort.field = e.target.value;
     renderList();
@@ -205,6 +210,11 @@ function getFilteredSubs() {
       (s.contact_name || '').toLowerCase().includes(q) ||
       (s.division_name || '').toLowerCase().includes(q)
     );
+  }
+
+  if (state.filter.notesSearch) {
+    const notesQuery = state.filter.notesSearch;
+    list = list.filter((s) => (s.notes || '').toLowerCase().includes(notesQuery));
   }
 
   // Sort
