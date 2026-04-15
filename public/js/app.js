@@ -414,10 +414,8 @@ function renderCountyData() {
   renderDataChart('countyDataChart', rows, 'No county chart data yet.');
 }
 
-function renderDataTable(containerId, detailContainerId, headerLabel, rows) {
+function renderDataTable(containerId, headerLabel, rows) {
   const container = document.getElementById(containerId);
-  const detail = document.getElementById(detailContainerId);
-  detail.innerHTML = '';
   if (!rows.length) {
     container.innerHTML = '<div class="data-empty">No data available yet.</div>';
     return;
