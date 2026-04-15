@@ -134,9 +134,24 @@ function setupTabs() {
 function setupFilters() {
   const divisionFilter = document.getElementById('globalDivisionFilter');
   if (divisionFilter) {
-    divisionFilter.addEventListener('mouseleave', () => {
-      divisionFilter.open = false;
-    });
+    let closeTimer = null;
+    const scheduleClose = () => {
+      if (closeTimer) clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => {
+        if (!divisionFilter.matches(':hover')) {
+          divisionFilter.open = false;
+        }
+      }, 120);
+    };
+    const cancelClose = () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
+    };
+
+    divisionFilter.addEventListener('mouseenter', cancelClose);
+    divisionFilter.addEventListener('mouseleave', scheduleClose);
 
     document.addEventListener('click', (e) => {
       if (!divisionFilter.open) return;
