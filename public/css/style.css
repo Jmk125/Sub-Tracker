@@ -755,6 +755,19 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.data-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.data-table tbody tr:hover {
+  background: rgba(232, 160, 32, 0.1);
+}
+
+.data-table tbody tr.selected {
+  background: rgba(59, 125, 216, 0.22);
+}
+
 .data-table th {
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -772,6 +785,99 @@ body {
 .data-empty {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.data-detail {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.data-detail:empty {
+  display: none;
+}
+
+.data-detail h4 {
+  font-size: 12px;
+  color: #fff;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-detail ul {
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.data-detail li {
+  font-size: 12px;
+  color: var(--text);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-detail li:last-child {
+  border-bottom: none;
+}
+
+.data-chart {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 10px;
+}
+
+.data-chart h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.data-chart-rows {
+  display: grid;
+  gap: 7px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 180px) 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.chart-label {
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-track {
+  height: 18px;
+  border-radius: 999px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  overflow: hidden;
+}
+
+.chart-bar {
+  height: 100%;
+  min-width: 26px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding-right: 6px;
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #ffc65c);
 }
 
 /* ── Forms / Inputs ──────────────────────────────────────── */
