@@ -38,6 +38,7 @@ const DIVISION_COLORS = [
   '#e91e63','#00bcd4','#ff5722','#607d8b','#795548',
 ];
 const MAP_HOVER_COLOR = '#e8a020';
+const COVERAGE_RING_HOVER_COLOR = '#ffd166';
 const COUNTY_GEOJSON_URL = 'https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json';
 const BOUNDARY_STROKE_COLORS = ['#000000', '#1e63ff', '#d62828', '#1f9d55'];
 const EXPORT_FIELDS = [
@@ -1291,28 +1292,28 @@ function renderPins() {
     });
 
     marker.addTo(state.mapLayerGroup);
-    state.mapPinLookup.set(sub._id, { marker, baseColor: color });
+
+    let coverageCircle = null;
+    if (state.showCoverageRadius) {
+      coverageCircle = L.circle([sub.lat, sub.lng], {
+        radius: coverageMeters,
+        ...getCoverageRingStyle(color),
+        interactive: false,
+      }).addTo(state.mapLayerGroup);
+    }
+
+    state.mapPinLookup.set(sub._id, { marker, baseColor: color, coverageCircle });
     marker.on('mouseover', (evt) => {
+      setMapPinHighlight(sub._id);
       showMapHoverTooltip(sub, evt.originalEvent);
     });
     marker.on('mousemove', (evt) => {
       showMapHoverTooltip(sub, evt.originalEvent);
     });
     marker.on('mouseout', () => {
+      setMapPinHighlight(null);
       hideMapHoverTooltip();
     });
-
-    if (state.showCoverageRadius) {
-      L.circle([sub.lat, sub.lng], {
-        radius: coverageMeters,
-        color,
-        weight: 1,
-        opacity: 0.45,
-        fillColor: color,
-        fillOpacity: 0.08,
-        interactive: false,
-      }).addTo(state.mapLayerGroup);
-    }
 
     visibleCounties.add(getSubCounty(sub).toLowerCase());
   });
@@ -1499,6 +1500,26 @@ function renderMapPinList(filtered) {
   });
 }
 
+function getCoverageRingStyle(color, highlighted = false) {
+  if (highlighted) {
+    return {
+      color: COVERAGE_RING_HOVER_COLOR,
+      weight: 3,
+      opacity: 1,
+      fillColor: color,
+      fillOpacity: 0.08,
+    };
+  }
+
+  return {
+    color,
+    weight: 1,
+    opacity: 0.45,
+    fillColor: color,
+    fillOpacity: 0.08,
+  };
+}
+
 function setMapPinHighlight(subId) {
   if (state.highlightedPinId && state.mapPinLookup.has(state.highlightedPinId)) {
     const previousPin = state.mapPinLookup.get(state.highlightedPinId);
@@ -1508,6 +1529,9 @@ function setMapPinHighlight(subId) {
       color: '#0f1114',
       weight: 1.5,
     });
+    if (previousPin.coverageCircle) {
+      previousPin.coverageCircle.setStyle(getCoverageRingStyle(previousPin.baseColor));
+    }
   }
 
   state.highlightedPinId = subId;
@@ -1521,6 +1545,10 @@ function setMapPinHighlight(subId) {
     color: MAP_HOVER_COLOR,
     weight: 2.5,
   });
+  if (pin.coverageCircle) {
+    pin.coverageCircle.setStyle(getCoverageRingStyle(pin.baseColor, true));
+    pin.coverageCircle.bringToFront();
+  }
   pin.marker.bringToFront();
 }
 
