@@ -6,7 +6,7 @@
 const state = {
   subs: [],
   divisions: [],
-  filter: { divisions: [], search: '', notesSearch: '', divisionMode: 'all' },
+  filter: { divisions: [], search: '', notesSearch: '', mapSearch: '', divisionMode: 'all' },
   sort: { field: 'company_name', dir: 1 },
   editingId: null,
   pendingDeleteId: null,
@@ -193,6 +193,10 @@ function setupFilters() {
   document.getElementById('notesSearchInput').addEventListener('input', e => {
     state.filter.notesSearch = e.target.value.toLowerCase();
     renderList();
+  });
+  document.getElementById('mapSearchInput').addEventListener('input', e => {
+    state.filter.mapSearch = e.target.value.toLowerCase();
+    if (state.mapReady) renderPins();
   });
 
   document.getElementById('sortField').addEventListener('change', e => {
@@ -1182,6 +1186,17 @@ async function initMap() {
   renderBoundaryList();
   await syncCountyBordersLayer();
 
+  map.on('popupopen', (event) => {
+    const popupEl = event.popup?.getElement();
+    if (!popupEl) return;
+    const editBtn = popupEl.querySelector('.map-popup-edit-btn[data-sub-id]');
+    if (!editBtn) return;
+    editBtn.addEventListener('click', () => {
+      const subId = editBtn.getAttribute('data-sub-id');
+      if (subId) openEditModal(subId);
+    }, { once: true });
+  });
+
   map.on('zoomend moveend', () => {
     hideMapHoverTooltip();
   });
@@ -1255,7 +1270,7 @@ async function ensureCountyFeaturesLoaded() {
 function renderPins() {
   if (!state.mapReady || !state.mapLeaflet || !state.mapLayerGroup) return;
 
-  const filtered = getFilteredSubs().filter(s => s.lat && s.lng);
+  const filtered = getMapFilteredSubs();
   const coverageMeters = state.coverageRadiusMiles * 1609.34;
   state.mapLayerGroup.clearLayers();
   state.mapPinLookup.clear();
@@ -1327,6 +1342,18 @@ function renderPins() {
 
   // Update pin list
   renderMapPinList(filtered);
+}
+
+function getMapFilteredSubs() {
+  let list = getFilteredSubs().filter(s => s.lat && s.lng);
+  if (!state.filter.mapSearch) return list;
+  const q = state.filter.mapSearch;
+  return list.filter((s) =>
+    (s.company_name || '').toLowerCase().includes(q) ||
+    (s.city || '').toLowerCase().includes(q) ||
+    (s.contact_name || '').toLowerCase().includes(q) ||
+    (s.division_name || '').toLowerCase().includes(q)
+  );
 }
 
 async function loadBoundaryCatalog() {
@@ -1567,6 +1594,7 @@ function buildMapPopup(sub) {
       ${sub.contact_email ? `<div>✉️ <a href="mailto:${escAttr(sub.contact_email)}">${escHtml(sub.contact_email)}</a></div>` : ''}
       ${website ? `<div>🌐 <a href="${escAttr(website)}" target="_blank" rel="noopener noreferrer">${escHtml(sub.website)}</a></div>` : ''}
       ${sub.notes ? `<div style="margin-top:6px;color:var(--text-dim);">${escHtml(sub.notes)}</div>` : ''}
+      <button type="button" class="btn btn-sm btn-ghost map-popup-edit-btn" data-sub-id="${escAttr(sub._id)}" style="margin-top:8px;">Edit Full Details</button>
     </div>
   `;
 }
