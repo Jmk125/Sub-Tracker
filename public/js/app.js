@@ -719,9 +719,11 @@ function toggleSecondContactFields() {
 }
 
 function setSecondContactVisible(isVisible) {
-  const fields = document.getElementById('secondContactFields');
+  const divider = document.getElementById('secondContactDivider');
+  const fields = document.querySelectorAll('.second-contact-field');
   const btn = document.getElementById('btnToggleSecondContact');
-  fields.classList.toggle('hidden', !isVisible);
+  if (divider) divider.classList.toggle('hidden', !isVisible);
+  fields.forEach((field) => field.classList.toggle('hidden', !isVisible));
   btn.textContent = isVisible ? '− Remove 2nd Contact' : '+ Add 2nd Contact';
   if (!isVisible) {
     ['fContact2Name', 'fContact2Phone', 'fContact2Email'].forEach((id) => { document.getElementById(id).value = ''; });

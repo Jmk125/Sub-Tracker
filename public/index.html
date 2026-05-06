@@ -230,26 +230,24 @@
           <div class="form-group full">
             <button type="button" id="btnToggleSecondContact" class="btn btn-ghost btn-sm btn-inline">+ Add 2nd Contact</button>
           </div>
-          <div id="secondContactFields" class="hidden full">
-            <div class="section-divider full"><span>Contact 2</span></div>
-            <div class="form-group full">
+          <div id="secondContactDivider" class="section-divider full hidden"><span>Contact 2</span></div>
+          <div class="form-group full second-contact-field hidden">
               <label>Contact Name</label>
               <input type="text" id="fContact2Name" placeholder="Jane Smith" />
-            </div>
-            <div class="form-group">
+          </div>
+          <div class="form-group second-contact-field hidden">
               <label>Phone</label>
               <input type="tel" id="fContact2Phone" placeholder="(614) 555-0101" />
-            </div>
-            <div class="form-group">
+          </div>
+          <div class="form-group second-contact-field hidden">
               <label>Email</label>
               <input type="email" id="fContact2Email" placeholder="jane@apexelec.com" />
-            </div>
           </div>
           <div class="section-divider full"><span>Labor Type</span></div>
-          <div class="form-group full">
-            <label><input type="checkbox" id="fLaborUnion" /> Union</label>
-            <label><input type="checkbox" id="fLaborNonUnion" /> Non-Union</label>
-            <label><input type="checkbox" id="fLaborUnknown" checked /> Unknown</label>
+          <div class="form-group full labor-type-row">
+            <label class="checkbox-option"><input type="checkbox" id="fLaborUnion" /> Union</label>
+            <label class="checkbox-option"><input type="checkbox" id="fLaborNonUnion" /> Non-Union</label>
+            <label class="checkbox-option"><input type="checkbox" id="fLaborUnknown" checked /> Unknown</label>
           </div>
           <div class="form-group full">
             <label>Notes</label>
