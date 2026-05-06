@@ -131,13 +131,16 @@ app.get('/api/subcontractors', (req, res) => {
     : {};
   db.find(query).sort({ company_name: 1 }).exec((err, docs) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(docs);
+    res.json(docs.map((doc) => ({
+      ...doc,
+      labor_type: ['union', 'non_union'].includes(doc.labor_type) ? doc.labor_type : 'unknown',
+    })));
   });
 });
 
 // ─── API: Add subcontractor ──────────────────────────────────────────────────
 app.post('/api/subcontractors', async (req, res) => {
-  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, notes } = req.body;
+  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, contact2_name, contact2_phone, contact2_email, labor_type, notes } = req.body;
   const normalizedDivisionNums = [...new Set((Array.isArray(division_nums) ? division_nums : [division_num]).filter(Boolean))];
   const primaryDivisionNum = normalizedDivisionNums[0];
 
@@ -178,6 +181,10 @@ app.post('/api/subcontractors', async (req, res) => {
     contact_name: contact_name || '',
     contact_phone: contact_phone || '',
     contact_email: contact_email || '',
+    contact2_name: contact2_name || '',
+    contact2_phone: contact2_phone || '',
+    contact2_email: contact2_email || '',
+    labor_type: ['union', 'non_union'].includes(labor_type) ? labor_type : 'unknown',
     notes: notes || '',
     lat,
     lng,
@@ -195,6 +202,9 @@ app.post('/api/subcontractors', async (req, res) => {
 app.put('/api/subcontractors/:id', async (req, res) => {
   const { id } = req.params;
   const updates = req.body;
+  if (Object.prototype.hasOwnProperty.call(updates, 'labor_type')) {
+    updates.labor_type = ['union', 'non_union'].includes(updates.labor_type) ? updates.labor_type : 'unknown';
+  }
   if (updates.division_nums || updates.division_num) {
     const normalizedDivisionNums = [...new Set((Array.isArray(updates.division_nums) ? updates.division_nums : [updates.division_num]).filter(Boolean))];
     updates.division_nums = normalizedDivisionNums;
