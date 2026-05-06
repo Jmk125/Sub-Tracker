@@ -995,6 +995,7 @@ select {
 }
 
 .modal.hidden { display: none; }
+.hidden { display: none !important; }
 
 .modal-backdrop {
   position: absolute;
@@ -1008,7 +1009,7 @@ select {
   border: 1px solid var(--border2);
   border-top: 3px solid var(--accent);
   border-radius: var(--radius);
-  width: 560px;
+  width: 680px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 60px);
   display: flex;
@@ -1079,6 +1080,27 @@ select {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-dim);
+}
+
+.labor-type-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+
+.labor-type-row .checkbox-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.labor-type-row .checkbox-option input {
+  width: auto;
 }
 .label-row {
   display: flex;

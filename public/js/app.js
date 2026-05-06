@@ -131,6 +131,7 @@ async function loadSubs() {
 function setupTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
+      resetAllFilters();
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       tab.classList.add('active');
@@ -142,6 +143,22 @@ function setupTabs() {
       }
     });
   });
+}
+
+function resetAllFilters() {
+  state.filter.search = '';
+  state.filter.notesSearch = '';
+  state.filter.mapSearch = '';
+  selectAllDivisions();
+  const searchInput = document.getElementById('searchInput');
+  const notesSearchInput = document.getElementById('notesSearchInput');
+  const mapSearchInput = document.getElementById('mapSearchInput');
+  if (searchInput) searchInput.value = '';
+  if (notesSearchInput) notesSearchInput.value = '';
+  if (mapSearchInput) mapSearchInput.value = '';
+  renderList();
+  if (state.mapReady) renderPins();
+  renderDataTab();
 }
 
 // ── Filters & Sort ─────────────────────────────────────────
@@ -299,6 +316,13 @@ function renderList() {
     if (sub.contact_name) contactParts.push(sub.contact_name);
     if (sub.contact_phone) contactParts.push(sub.contact_phone);
     if (sub.contact_email) contactParts.push(`<a href="mailto:${sub.contact_email}" style="color:var(--accent2)">${sub.contact_email}</a>`);
+    const contact2Parts = [];
+    if (sub.contact2_name) contact2Parts.push(sub.contact2_name);
+    if (sub.contact2_phone) contact2Parts.push(sub.contact2_phone);
+    if (sub.contact2_email) contact2Parts.push(`<a href="mailto:${sub.contact2_email}" style="color:var(--accent2)">${sub.contact2_email}</a>`);
+    const laborTypeLabel = sub.labor_type === 'union'
+      ? 'Union'
+      : (sub.labor_type === 'non_union' ? 'Non-Union' : 'Unknown');
 
     card.innerHTML = `
       <div class="sub-card-main">
@@ -309,6 +333,8 @@ function renderList() {
           ${websiteHtml}
         </div>
         ${contactParts.length ? `<div class="sub-contact">👤 ${contactParts.join(' · ')}</div>` : ''}
+        ${contact2Parts.length ? `<div class="sub-contact">👥 ${contact2Parts.join(' · ')}</div>` : ''}
+        <div class="sub-contact">🛠 ${laborTypeLabel}</div>
         ${sub.notes ? `<div class="sub-notes">${escHtml(sub.notes)}</div>` : ''}
       </div>
       <div class="sub-card-actions">
@@ -551,7 +577,9 @@ function setupModal() {
   document.getElementById('modalSave').addEventListener('click', saveModal);
   document.getElementById('btnAddDivisionRow').addEventListener('click', () => addDivisionRow());
   document.getElementById('btnPasteAddress').addEventListener('click', pasteAddressFromClipboard);
+  document.getElementById('btnToggleSecondContact').addEventListener('click', toggleSecondContactFields);
   setupPhoneFormatting();
+  setupLaborTypeInputs();
   setupManualCoordsModal();
 }
 
@@ -578,18 +606,25 @@ function openEditModal(id) {
   document.getElementById('fContactName').value = sub.contact_name || '';
   document.getElementById('fContactPhone').value = formatPhoneInput(sub.contact_phone || '');
   document.getElementById('fContactEmail').value = sub.contact_email || '';
+  document.getElementById('fContact2Name').value = sub.contact2_name || '';
+  document.getElementById('fContact2Phone').value = formatPhoneInput(sub.contact2_phone || '');
+  document.getElementById('fContact2Email').value = sub.contact2_email || '';
+  setSecondContactVisible(Boolean(sub.contact2_name || sub.contact2_phone || sub.contact2_email));
+  setLaborType(sub.labor_type || 'unknown');
   document.getElementById('fNotes').value = sub.notes || '';
   hideGeoStatus();
   document.getElementById('modal').classList.remove('hidden');
 }
 
 function clearForm() {
-  ['fCompanyName','fAddress','fWebsite','fCity','fContactName','fContactPhone','fContactEmail','fNotes'].forEach(id => {
+  ['fCompanyName','fAddress','fWebsite','fCity','fContactName','fContactPhone','fContactEmail','fContact2Name','fContact2Phone','fContact2Email','fNotes'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('fState').value = 'OH';
   document.getElementById('fZip').value = '';
   setDivisionSelections([state.divisions[0]?.num].filter(Boolean));
+  setSecondContactVisible(false);
+  setLaborType('unknown');
   clearAddressFieldHighlights();
   hideGeoStatus();
 }
@@ -621,6 +656,10 @@ async function saveModal() {
     contact_name: document.getElementById('fContactName').value.trim(),
     contact_phone: document.getElementById('fContactPhone').value.trim(),
     contact_email: document.getElementById('fContactEmail').value.trim(),
+    contact2_name: document.getElementById('fContact2Name').value.trim(),
+    contact2_phone: document.getElementById('fContact2Phone').value.trim(),
+    contact2_email: document.getElementById('fContact2Email').value.trim(),
+    labor_type: getLaborType(),
     notes: document.getElementById('fNotes').value.trim(),
   };
 
@@ -661,6 +700,61 @@ function setupPhoneFormatting() {
       phoneInput.value = formatPhoneInput(phoneInput.value);
     }, 0);
   });
+
+  const phoneInput2 = document.getElementById('fContact2Phone');
+  if (!phoneInput2) return;
+  phoneInput2.addEventListener('input', () => {
+    phoneInput2.value = formatPhoneInput(phoneInput2.value);
+  });
+  phoneInput2.addEventListener('paste', () => {
+    setTimeout(() => {
+      phoneInput2.value = formatPhoneInput(phoneInput2.value);
+    }, 0);
+  });
+}
+
+function toggleSecondContactFields() {
+  const isHidden = document.getElementById('secondContactFields').classList.contains('hidden');
+  setSecondContactVisible(isHidden);
+}
+
+function setSecondContactVisible(isVisible) {
+  const divider = document.getElementById('secondContactDivider');
+  const fields = document.querySelectorAll('.second-contact-field');
+  const btn = document.getElementById('btnToggleSecondContact');
+  if (divider) divider.classList.toggle('hidden', !isVisible);
+  fields.forEach((field) => field.classList.toggle('hidden', !isVisible));
+  btn.textContent = isVisible ? '− Remove 2nd Contact' : '+ Add 2nd Contact';
+  if (!isVisible) {
+    ['fContact2Name', 'fContact2Phone', 'fContact2Email'].forEach((id) => { document.getElementById(id).value = ''; });
+  }
+}
+
+function setupLaborTypeInputs() {
+  const union = document.getElementById('fLaborUnion');
+  const nonUnion = document.getElementById('fLaborNonUnion');
+  const unknown = document.getElementById('fLaborUnknown');
+  [union, nonUnion, unknown].forEach((box) => {
+    box.addEventListener('change', () => {
+      if (!box.checked) {
+        if (!union.checked && !nonUnion.checked && !unknown.checked) unknown.checked = true;
+        return;
+      }
+      [union, nonUnion, unknown].forEach((other) => { if (other !== box) other.checked = false; });
+    });
+  });
+}
+
+function setLaborType(type) {
+  document.getElementById('fLaborUnion').checked = type === 'union';
+  document.getElementById('fLaborNonUnion').checked = type === 'non_union';
+  document.getElementById('fLaborUnknown').checked = type !== 'union' && type !== 'non_union';
+}
+
+function getLaborType() {
+  if (document.getElementById('fLaborUnion').checked) return 'union';
+  if (document.getElementById('fLaborNonUnion').checked) return 'non_union';
+  return 'unknown';
 }
 
 function cleanWebsiteValue(value) {
