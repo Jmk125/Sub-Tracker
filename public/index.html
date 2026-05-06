@@ -126,7 +126,11 @@
           <div id="mapTooltip" class="map-tooltip"></div>
           <div class="map-bottom-controls">
             <div class="temp-pin-controls">
-              <input id="projectPinAddress" type="text" placeholder="Project address..." />
+              <input id="projectPinAddress" type="text" placeholder="Project address..." list="recentProjectAddresses" />
+              <select id="recentProjectAddressSelect" aria-label="Recent pinned addresses">
+                <option value="">Recent pinned addresses…</option>
+              </select>
+              <datalist id="recentProjectAddresses"></datalist>
               <input id="projectPinCoords" type="text" placeholder="Fallback coords: 39.9612, -82.9988" />
               <button id="btnAddProjectPin" class="map-btn map-btn-inline" type="button">Add Pin</button>
               <button id="btnClearProjectPin" class="map-btn map-btn-inline" type="button">Clear</button>
