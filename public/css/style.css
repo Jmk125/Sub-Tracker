@@ -644,11 +644,17 @@ body {
 }
 
 #projectPinAddress,
-#projectPinCoords {
+#projectPinCoords,
+#recentProjectAddressSelect {
   width: 220px;
   min-width: 180px;
   padding: 5px 8px;
   font-size: 12px;
+}
+
+#recentProjectAddressSelect {
+  color: var(--text);
+  background: var(--bg-elev);
 }
 
 .project-pin-status {

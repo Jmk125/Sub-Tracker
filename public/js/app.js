@@ -41,6 +41,18 @@ const MAP_HOVER_COLOR = '#e8a020';
 const COVERAGE_RING_HOVER_COLOR = '#ffd166';
 const COUNTY_GEOJSON_URL = 'https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json';
 const BOUNDARY_STROKE_COLORS = ['#000000', '#1e63ff', '#d62828', '#1f9d55'];
+const RECENT_PROJECT_PINS_KEY = 'subtracker_recent_project_pin_addresses';
+const MAX_RECENT_PROJECT_PINS = 10;
+
+function getLocalStorageSafe() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    return window.localStorage;
+  } catch (err) {
+    return null;
+  }
+}
+
 const EXPORT_FIELDS = [
   { key: 'company_name', label: 'Company Name', value: sub => sub.company_name || '' },
   { key: 'division_nums', label: 'Division Numbers', value: sub => getSubDivisionNums(sub).join(', ') },
@@ -76,6 +88,7 @@ async function init() {
   setupModal();
   setupConfirmModal();
   setupExportModal();
+  setupRecentProjectAddressUi();
 }
 
 // ── API ────────────────────────────────────────────────────
@@ -1049,6 +1062,71 @@ function parseLatLng(value) {
   return [parseFloat(parts[0]), parseFloat(parts[1])];
 }
 
+function getRecentProjectPinAddresses() {
+  const storage = getLocalStorageSafe();
+  if (!storage) return [];
+
+  try {
+    const parsed = JSON.parse(storage.getItem(RECENT_PROJECT_PINS_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value) => typeof value === 'string' && value.trim()).slice(0, MAX_RECENT_PROJECT_PINS);
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveRecentProjectPinAddress(address) {
+  const next = String(address || '').trim();
+  if (!next) return;
+  const existing = getRecentProjectPinAddresses();
+  const deduped = [next, ...existing.filter((item) => item.toLowerCase() !== next.toLowerCase())];
+  const storage = getLocalStorageSafe();
+  if (!storage) return;
+
+  try {
+    storage.setItem(RECENT_PROJECT_PINS_KEY, JSON.stringify(deduped.slice(0, MAX_RECENT_PROJECT_PINS)));
+  } catch (err) {
+    return;
+  }
+
+  renderRecentProjectAddressOptions();
+}
+
+function renderRecentProjectAddressOptions() {
+  const select = document.getElementById('recentProjectAddressSelect');
+  const datalist = document.getElementById('recentProjectAddresses');
+  if (!select || !datalist) return;
+
+  const recent = getRecentProjectPinAddresses();
+  select.innerHTML = '<option value="">Recent pinned addresses…</option>';
+  datalist.innerHTML = '';
+
+  recent.forEach((address) => {
+    const option = document.createElement('option');
+    option.value = address;
+    option.textContent = address;
+    select.appendChild(option);
+
+    const dataOption = document.createElement('option');
+    dataOption.value = address;
+    datalist.appendChild(dataOption);
+  });
+}
+
+function setupRecentProjectAddressUi() {
+  renderRecentProjectAddressOptions();
+  const select = document.getElementById('recentProjectAddressSelect');
+  const addressInput = document.getElementById('projectPinAddress');
+  if (!select || !addressInput) return;
+
+  select.addEventListener('change', () => {
+    if (!select.value) return;
+    addressInput.value = select.value;
+    select.value = '';
+    addressInput.focus();
+  });
+}
+
 function setupTempPinControls() {
   const btnAdd = document.getElementById('btnAddProjectPin');
   const btnClear = document.getElementById('btnClearProjectPin');
@@ -1072,6 +1150,7 @@ async function addTemporaryProjectPin() {
       lat = parseFloat(geo.lat);
       lng = parseFloat(geo.lng);
       setProjectPinStatus('Pinned from address.', 'ok');
+      saveRecentProjectPinAddress(address);
     } catch (err) {
       // fall through to coordinate parsing
     }
