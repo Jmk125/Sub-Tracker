@@ -1213,11 +1213,19 @@ function setupRecentProjectAddressUi() {
   const addressInput = document.getElementById('projectPinAddress');
   if (!select || !addressInput) return;
 
-  select.addEventListener('change', () => {
+  select.addEventListener('change', async () => {
     if (!select.value) return;
-    addressInput.value = select.value;
+    const selectedAddress = select.value;
+    addressInput.value = selectedAddress;
     select.value = '';
     addressInput.focus();
+
+    select.disabled = true;
+    try {
+      await addTemporaryProjectPin();
+    } finally {
+      select.disabled = false;
+    }
   });
 }
 
