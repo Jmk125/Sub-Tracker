@@ -714,8 +714,9 @@ function setupPhoneFormatting() {
 }
 
 function toggleSecondContactFields() {
-  const isHidden = document.getElementById('secondContactFields').classList.contains('hidden');
-  setSecondContactVisible(isHidden);
+  const divider = document.getElementById('secondContactDivider');
+  const currentlyVisible = divider ? !divider.classList.contains('hidden') : false;
+  setSecondContactVisible(!currentlyVisible);
 }
 
 function setSecondContactVisible(isVisible) {
@@ -724,9 +725,12 @@ function setSecondContactVisible(isVisible) {
   const btn = document.getElementById('btnToggleSecondContact');
   if (divider) divider.classList.toggle('hidden', !isVisible);
   fields.forEach((field) => field.classList.toggle('hidden', !isVisible));
-  btn.textContent = isVisible ? '− Remove 2nd Contact' : '+ Add 2nd Contact';
+  if (btn) btn.textContent = isVisible ? '− Remove 2nd Contact' : '+ Add 2nd Contact';
   if (!isVisible) {
-    ['fContact2Name', 'fContact2Phone', 'fContact2Email'].forEach((id) => { document.getElementById(id).value = ''; });
+    ['fContact2Name', 'fContact2Phone', 'fContact2Email'].forEach((id) => {
+      const input = document.getElementById(id);
+      if (input) input.value = '';
+    });
   }
 }
 
