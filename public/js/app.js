@@ -598,12 +598,17 @@ function setupModal() {
 
 function setupBatchModal() {
   const modal = document.getElementById('batchModal');
+  const closeBatchModal = () => {
+    state.batchCards = state.batchCards.filter((card) => !card.savedId);
+    renderBatchCards();
+    modal.classList.add('hidden');
+  };
   document.getElementById('btnBatchAddSubs').addEventListener('click', () => {
     modal.classList.remove('hidden');
     if (!state.batchCards.length) addBatchCard();
   });
-  document.getElementById('batchModalClose').addEventListener('click', () => modal.classList.add('hidden'));
-  modal.querySelector('.modal-backdrop').addEventListener('click', () => modal.classList.add('hidden'));
+  document.getElementById('batchModalClose').addEventListener('click', closeBatchModal);
+  modal.querySelector('.modal-backdrop').addEventListener('click', closeBatchModal);
   document.getElementById('btnBatchAddCard').addEventListener('click', addBatchCard);
   document.getElementById('btnBatchClearCards').addEventListener('click', () => {
     state.batchCards = [];
