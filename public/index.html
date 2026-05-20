@@ -88,6 +88,16 @@
 
     <!-- Map Tab -->
     <div id="tab-map" class="tab-content">
+      <div class="map-top-toolbar">
+        <div class="search-wrap map-search-wrap">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="mapSearchInput" placeholder="Search by name, city, contact..." />
+        </div>
+        <div class="search-wrap notes-search-wrap map-notes-search-wrap">
+          <span class="search-icon">📝</span>
+          <input type="text" id="mapNotesSearchInput" placeholder="Search notes..." />
+        </div>
+      </div>
       <div class="map-container">
         <div id="map-sidebar">
           <div class="map-stats">
@@ -110,10 +120,6 @@
           </div>
           <div class="map-pin-list">
             <h3>Pins</h3>
-            <div class="search-wrap map-search-wrap">
-              <span class="search-icon">⌕</span>
-              <input type="text" id="mapSearchInput" placeholder="Search by name, city, contact..." />
-            </div>
             <div id="mapPinList"></div>
           </div>
         </div>
