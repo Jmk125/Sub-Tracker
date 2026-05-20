@@ -181,7 +181,26 @@ app.post('/api/ai/parse-quote', upload.single('quotePdf'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'quotePdf file is required.' });
   try {
     const dataUrl = `data:application/pdf;base64,${req.file.buffer.toString('base64')}`;
-    const prompt = 'Extract subcontractor quote contact data. Return ONLY a JSON object with keys: company_name, contact_name, contact_phone, contact_email, website, address, city, state, zip, division_num. Use empty string when unknown. Do not put email addresses in website. Format address for US geocoding: separate street/city/state/zip, use 2-letter uppercase state and 5-digit ZIP when available.';
+    const prompt = `Extract subcontractor quote contact data.
+Return ONLY a JSON object with keys:
+- company_name (string)
+- contact_name (string)
+- contact_phone (string)
+- contact_email (string)
+- website (string)
+- address (string)
+- city (string)
+- state (string, 2-letter uppercase when possible)
+- zip (string, 5-digit when possible)
+- division_num (string, primary CSI division code)
+- division_nums (array of CSI division codes, include one or more when scope clearly indicates multiple trades)
+
+Use empty string when unknown, and [] for unknown division_nums.
+Do not put email addresses in website.
+Format address for US geocoding with separated street/city/state/zip.
+
+Valid CSI division codes for this app:
+01, 02, 03, 04, 05, 06, 07, 08, 09A, 09B, 09C, 10, 11, 12, 13, 14, 21, 22, 23, 25, 26, 27, 28, 31, 32, 33, 34, 35, 40, 41, 48.`;
     const aiRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {

@@ -730,6 +730,16 @@ async function scanBatchCardPdf(cardId, file) {
         cardState.fields[k] = v.trim();
       }
     });
+    const aiDivisions = Array.isArray(data.fields?.division_nums)
+      ? data.fields.division_nums.map((d) => String(d || '').trim()).filter(Boolean)
+      : [];
+    if (aiDivisions.length) {
+      cardState.division_nums = [...new Set(aiDivisions)];
+      renderBatchCards();
+    } else if (typeof data.fields?.division_num === 'string' && data.fields.division_num.trim()) {
+      cardState.division_nums = [data.fields.division_num.trim()];
+      renderBatchCards();
+    }
     const websiteInput = card.querySelector('[data-field="website"]');
     if (websiteInput && websiteInput.value.includes('@')) websiteInput.value = '';
     statusEl.textContent = '✅ AI fields inserted. Review and click Save.';

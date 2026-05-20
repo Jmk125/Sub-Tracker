@@ -23,6 +23,7 @@ You can now batch-enter subcontractors by opening **Batch Add** in the header:
 - Add as many cards as you want in one scrollable window.
 - Drag/drop a quote PDF (vector or scanned) onto any card.
 - AI extracts likely contact/company/address info to prefill fields.
+- AI also attempts to suggest CSI division(s) from quote scope text.
 - Review/edit then click **Save Subcontractor** on each card.
 
 ### API key setup
