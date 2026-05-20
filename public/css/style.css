@@ -1225,3 +1225,15 @@ select {
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+.batch-modal-box { width: min(1500px, 99vw); }
+.batch-modal-body { max-height: 82vh; overflow-y: auto; }
+.batch-toolbar { display:flex; gap:8px; margin: 10px 0 14px; }
+.batch-card-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+.batch-card { border:1px solid var(--border2); background:var(--bg3); border-radius:var(--radius); padding:10px; display:flex; flex-direction:column; gap:8px; }
+.batch-card-head { display:flex; justify-content:space-between; align-items:center; }
+.batch-card-row { display:grid; grid-template-columns: 1fr 84px 110px; gap:8px; }
+.batch-dropzone { border:1px dashed var(--accent2); border-radius:var(--radius); padding:10px; text-align:center; color:var(--text-dim); }
+.batch-dropzone.active { border-color: var(--accent); color: var(--accent); }
+.batch-status { min-height: 18px; font-size: 12px; color: var(--text-dim); }
+.batch-save-disabled { opacity: 0.6; cursor: not-allowed; }
