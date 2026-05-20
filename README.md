@@ -35,7 +35,13 @@ You can now batch-enter subcontractors by opening **Batch Add** in the header:
    ```bash
    OPENAI_API_KEY=...
    ```
-3. Ensure dependencies include `multer` for file uploads:
+3. (Optional) pick model:
+   ```bash
+   OPENAI_MODEL=gpt-4.1
+   ```
+   - `gpt-4.1` = better extraction quality
+   - `gpt-4.1-mini` = lower cost/faster
+4. Ensure dependencies include `multer` for file uploads:
    ```bash
    npm install multer
    ```
