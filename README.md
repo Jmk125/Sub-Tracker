@@ -16,6 +16,38 @@ npm start
 
 Access at: http://<pi-ip>:3007
 
+## AI Quote Auto-Fill + Batch Add
+
+You can now batch-enter subcontractors by opening **Batch Add** in the header:
+
+- Add as many cards as you want in one scrollable window.
+- Drag/drop a quote PDF (vector or scanned) onto any card.
+- AI extracts likely contact/company/address info to prefill fields.
+- Review/edit then click **Save Subcontractor** on each card.
+
+### API key setup
+
+1. Copy env template:
+   ```bash
+   cp .env.example .env
+   ```
+2. Add your OpenAI key to `.env`:
+   ```bash
+   OPENAI_API_KEY=...
+   ```
+   Yes, the filename should be exactly `.env` in the project root (same folder as `server.js`).
+3. (Optional) pick model:
+   ```bash
+   OPENAI_MODEL=gpt-4.1
+   ```
+   - `gpt-4.1` = better extraction quality
+   - `gpt-4.1-mini` = lower cost/faster
+4. Ensure dependencies include `multer` for file uploads:
+   ```bash
+   npm install multer
+   ```
+5. Restart the server after editing `.env` so updated keys are loaded.
+
 ## HTTPS (recommended for clipboard auto-paste)
 
 Clipboard read APIs are more reliable in secure contexts. The server now supports HTTPS if a cert/key are present:

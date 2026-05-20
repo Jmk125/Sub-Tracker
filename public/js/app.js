@@ -27,7 +27,9 @@ const state = {
   boundaryLayers: new Map(),
   tempPinMarker: null,
   manualCoordsId: null,
+  manualCoordsResolve: null,
   exportColumns: [],
+  batchCards: [],
 };
 
 // Division color palette (for map pins)
@@ -89,6 +91,7 @@ async function init() {
   setupConfirmModal();
   setupExportModal();
   setupRecentProjectAddressUi();
+  setupBatchModal();
 }
 
 // ── API ────────────────────────────────────────────────────
@@ -99,9 +102,20 @@ async function api(method, path, body) {
   };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
-  const data = await res.json();
+  const data = await parseJsonResponseSafe(res);
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+async function parseJsonResponseSafe(res) {
+  const rawText = await res.text();
+  if (!rawText) return {};
+  try {
+    return JSON.parse(rawText);
+  } catch (err) {
+    const snippet = rawText.slice(0, 180).replace(/\s+/g, ' ').trim();
+    throw new Error(`Server returned non-JSON response (HTTP ${res.status}). ${snippet}`);
+  }
 }
 
 // ── Load Data ──────────────────────────────────────────────
@@ -581,6 +595,190 @@ function setupModal() {
   setupPhoneFormatting();
   setupLaborTypeInputs();
   setupManualCoordsModal();
+}
+
+function setupBatchModal() {
+  const modal = document.getElementById('batchModal');
+  const closeBatchModal = () => {
+    state.batchCards = state.batchCards.filter((card) => !card.savedId);
+    renderBatchCards();
+    modal.classList.add('hidden');
+  };
+  document.getElementById('btnBatchAddSubs').addEventListener('click', () => {
+    modal.classList.remove('hidden');
+    if (!state.batchCards.length) addBatchCard();
+  });
+  document.getElementById('batchModalClose').addEventListener('click', closeBatchModal);
+  modal.querySelector('.modal-backdrop').addEventListener('click', closeBatchModal);
+  document.getElementById('btnBatchAddCard').addEventListener('click', addBatchCard);
+  document.getElementById('btnBatchClearCards').addEventListener('click', () => {
+    state.batchCards = [];
+    renderBatchCards();
+  });
+}
+
+function addBatchCard() {
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  state.batchCards.push({ id, status: 'Drop quote PDF here', savedId: null, dirty: false, isSaving: false, fields: { state: 'OH' }, division_nums: [state.divisions[0]?.num || ''] });
+  renderBatchCards();
+}
+
+function renderBatchCards() {
+  const grid = document.getElementById('batchCardGrid');
+  grid.innerHTML = state.batchCards.map((card, idx) => `
+    <div class="batch-card" data-card-id="${card.id}">
+      <div class="batch-card-head">
+        <strong>Card ${idx + 1}</strong>
+        <button class="btn btn-danger btn-sm btn-inline" data-remove-card="${card.id}">Remove</button>
+      </div>
+      <input type="text" data-field="company_name" value="${escAttr(card.fields?.company_name || '')}" placeholder="Company Name *" />
+      <input type="text" data-field="contact_name" value="${escAttr(card.fields?.contact_name || '')}" placeholder="Contact Name" />
+      <input type="tel" data-field="contact_phone" value="${escAttr(card.fields?.contact_phone || '')}" placeholder="Phone" />
+      <input type="email" data-field="contact_email" value="${escAttr(card.fields?.contact_email || '')}" placeholder="Email" />
+      <input type="text" data-field="website" value="${escAttr(card.fields?.website || '')}" placeholder="https://example.com" />
+      <input type="text" data-field="address" value="${escAttr(card.fields?.address || '')}" placeholder="Street Address" />
+      <div class="batch-card-row">
+        <input type="text" data-field="city" value="${escAttr(card.fields?.city || '')}" placeholder="City" />
+        <input type="text" data-field="state" value="${escAttr(card.fields?.state || 'OH')}" maxlength="2" placeholder="State" />
+        <input type="text" data-field="zip" value="${escAttr(card.fields?.zip || '')}" placeholder="ZIP" />
+      </div>
+      <div class="batch-division-rows">
+        ${(card.division_nums || [state.divisions[0]?.num || '']).map((num, i) => `
+          <div class="batch-division-row">
+            <select data-division-index="${i}">${state.divisions.map(d => `<option value="${escAttr(d.num)}" ${num === d.num ? 'selected' : ''}>${escHtml(d.num)} — ${escHtml(d.name)}</option>`).join('')}</select>
+            ${i === 0 ? `<button type="button" class="btn btn-ghost btn-sm btn-inline" data-add-division="${card.id}">+</button>` : `<button type="button" class="btn btn-danger btn-sm btn-inline" data-remove-division="${card.id}" data-division-index="${i}">−</button>`}
+          </div>
+        `).join('')}
+      </div>
+      <textarea data-field="notes" rows="2" placeholder="Notes (manual entry)">${escHtml(card.fields?.notes || '')}</textarea>
+      <div class="batch-dropzone" data-dropzone="${card.id}">Drag & drop quote PDF</div>
+      <div class="batch-status">${escHtml(card.status || '')}</div>
+      <button class="btn btn-primary btn-sm${card.savedId && !card.dirty ? ' batch-save-disabled' : ''}" data-save-card="${card.id}" ${card.savedId && !card.dirty ? 'disabled' : ''}>${card.savedId ? 'Save Changes' : 'Save Subcontractor'}</button>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('[data-remove-card]').forEach(btn => btn.addEventListener('click', () => {
+    state.batchCards = state.batchCards.filter(c => c.id !== btn.dataset.removeCard);
+    renderBatchCards();
+  }));
+  grid.querySelectorAll('[data-save-card]').forEach(btn => btn.addEventListener('click', () => saveBatchCard(btn.dataset.saveCard)));
+  grid.querySelectorAll('[data-add-division]').forEach((btn) => btn.addEventListener('click', () => {
+    const cardState = state.batchCards.find(c => c.id === btn.dataset.addDivision);
+    if (!cardState) return;
+    cardState.division_nums.push(state.divisions[0]?.num || '');
+    renderBatchCards();
+  }));
+  grid.querySelectorAll('[data-remove-division]').forEach((btn) => btn.addEventListener('click', () => {
+    const cardState = state.batchCards.find(c => c.id === btn.dataset.removeDivision);
+    if (!cardState) return;
+    cardState.division_nums.splice(parseInt(btn.dataset.divisionIndex, 10), 1);
+    if (!cardState.division_nums.length) cardState.division_nums = [state.divisions[0]?.num || ''];
+    renderBatchCards();
+  }));
+  grid.querySelectorAll('.batch-division-row select').forEach((sel) => sel.addEventListener('change', () => {
+    const cardEl = sel.closest('.batch-card');
+    const cardState = state.batchCards.find(c => c.id === cardEl?.dataset.cardId);
+    if (!cardState) return;
+    const idx = parseInt(sel.dataset.divisionIndex, 10);
+    cardState.division_nums[idx] = sel.value;
+  }));
+  grid.querySelectorAll('.batch-card [data-field]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const cardEl = input.closest('.batch-card');
+      const cardId = cardEl?.dataset.cardId;
+      const cardState = state.batchCards.find(c => c.id === cardId);
+      if (!cardState) return;
+      cardState.fields[input.dataset.field] = input.value;
+      if (cardState.savedId) {
+        cardState.dirty = true;
+        cardState.status = '✏️ Changes pending. Click Save Changes.';
+        const btn = cardEl.querySelector('[data-save-card]');
+        if (btn) btn.disabled = false;
+        const status = cardEl.querySelector('.batch-status');
+        if (status) status.textContent = cardState.status;
+      }
+    });
+  });
+  grid.querySelectorAll('.batch-dropzone').forEach(zone => {
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('active'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('active'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('active');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) scanBatchCardPdf(zone.dataset.dropzone, file);
+    });
+  });
+}
+
+async function scanBatchCardPdf(cardId, file) {
+  const card = document.querySelector(`[data-card-id="${cardId}"]`);
+  const cardState = state.batchCards.find(c => c.id === cardId);
+  const statusEl = card?.querySelector('.batch-status');
+  if (!card || !statusEl || !cardState) return;
+  statusEl.textContent = '⏳ Scanning PDF with AI...';
+  const formData = new FormData();
+  formData.append('quotePdf', file);
+  try {
+    const res = await fetch('/api/ai/parse-quote', { method: 'POST', body: formData });
+    const data = await parseJsonResponseSafe(res);
+    if (!res.ok) throw new Error(data.error || 'AI parsing failed');
+    Object.entries(data.fields || {}).forEach(([k, v]) => {
+      const input = card.querySelector(`[data-field="${k}"]`);
+      if (input && typeof v === 'string' && v.trim()) {
+        input.value = v.trim();
+        cardState.fields[k] = v.trim();
+      }
+    });
+    const websiteInput = card.querySelector('[data-field="website"]');
+    if (websiteInput && websiteInput.value.includes('@')) websiteInput.value = '';
+    statusEl.textContent = '✅ AI fields inserted. Review and click Save.';
+  } catch (err) {
+    statusEl.textContent = `❌ ${err.message}`;
+  }
+}
+
+async function saveBatchCard(cardId) {
+  const card = document.querySelector(`[data-card-id="${cardId}"]`);
+  if (!card) return;
+  const cardState = state.batchCards.find(c => c.id === cardId);
+  if (!cardState || cardState.isSaving) return;
+  const statusEl = card.querySelector('.batch-status');
+  const saveBtn = card.querySelector('[data-save-card]');
+  const payload = {};
+  card.querySelectorAll('[data-field]').forEach((el) => { payload[el.dataset.field] = el.value.trim(); });
+  payload.website = cleanWebsiteValue(payload.website);
+  if ((payload.website || '').includes('@')) payload.website = '';
+  payload.division_nums = [...new Set((cardState.division_nums || []).filter(Boolean))];
+  payload.division_num = payload.division_nums[0];
+  payload.labor_type = 'unknown';
+  if (!payload.company_name || !payload.division_num) {
+    statusEl.textContent = '❌ Company + Division required.';
+    return;
+  }
+  try {
+    cardState.isSaving = true;
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = cardState.savedId ? 'Saving Changes…' : 'Saving…';
+    }
+    statusEl.textContent = cardState.savedId ? '⏳ Saving changes...' : '⏳ Saving subcontractor...';
+    const saved = cardState.savedId
+      ? await api('PUT', `/api/subcontractors/${cardState.savedId}`, payload)
+      : await api('POST', '/api/subcontractors', payload);
+    cardState.savedId = saved?._id || cardState.savedId;
+    if (!(saved?.lat && saved?.lng)) {
+      await promptForManualCoordsOrSkip(saved?._id || cardState.savedId, 'We could not geocode that address. Paste coordinates or skip geocoding.');
+    }
+    cardState.dirty = false;
+    cardState.status = '✅ Saved.';
+    await loadSubs();
+    renderBatchCards();
+  } catch (err) {
+    statusEl.textContent = `❌ ${err.message}`;
+  } finally {
+    cardState.isSaving = false;
+  }
 }
 
 function openAddModal() {
@@ -1113,10 +1311,13 @@ function setupManualCoordsModal() {
   document.getElementById('manualCoordsClose').addEventListener('click', closeManualCoordsModal);
   document.getElementById('manualCoordsCancel').addEventListener('click', closeManualCoordsModal);
   document.getElementById('manualCoordsSave').addEventListener('click', saveManualCoords);
+  const skipBtn = document.getElementById('manualCoordsSkip');
+  if (skipBtn) skipBtn.addEventListener('click', () => closeManualCoordsModal(true));
 }
 
 function openManualCoordsModal(subId, options = {}) {
   state.manualCoordsId = subId;
+  state.manualCoordsResolve = typeof options.onComplete === 'function' ? options.onComplete : null;
   document.getElementById('manualCoordsReason').textContent = options.reason || 'Unable to geocode this address.';
   document.getElementById('fManualCoords').value = '';
   document.getElementById('manualCoordsError').classList.add('hidden');
@@ -1124,9 +1325,12 @@ function openManualCoordsModal(subId, options = {}) {
   document.getElementById('fManualCoords').focus();
 }
 
-function closeManualCoordsModal() {
+function closeManualCoordsModal(skipped = false) {
   document.getElementById('manualCoordsModal').classList.add('hidden');
+  const resolver = state.manualCoordsResolve;
+  state.manualCoordsResolve = null;
   state.manualCoordsId = null;
+  if (resolver) resolver({ skipped });
 }
 
 async function saveManualCoords() {
@@ -1145,13 +1349,19 @@ async function saveManualCoords() {
   try {
     await api('PUT', `/api/subcontractors/${state.manualCoordsId}`, { lat, lng });
     await loadSubs();
-    closeManualCoordsModal();
+    closeManualCoordsModal(false);
   } catch (e) {
     errorEl.textContent = e.message || 'Could not save coordinates.';
     errorEl.classList.remove('hidden');
   } finally {
     document.getElementById('manualCoordsSave').disabled = false;
   }
+}
+
+function promptForManualCoordsOrSkip(subId, reason) {
+  return new Promise((resolve) => {
+    openManualCoordsModal(subId, { reason, onComplete: resolve });
+  });
 }
 
 function parseLatLng(value) {
