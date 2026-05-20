@@ -27,6 +27,7 @@ const state = {
   boundaryLayers: new Map(),
   tempPinMarker: null,
   manualCoordsId: null,
+  manualCoordsResolve: null,
   exportColumns: [],
   batchCards: [],
 };
@@ -618,7 +619,7 @@ function setupBatchModal() {
 
 function addBatchCard() {
   const id = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-  state.batchCards.push({ id, status: 'Drop quote PDF here', savedId: null, dirty: false, isSaving: false, fields: { state: 'OH' } });
+  state.batchCards.push({ id, status: 'Drop quote PDF here', savedId: null, dirty: false, isSaving: false, fields: { state: 'OH' }, division_nums: [state.divisions[0]?.num || ''] });
   renderBatchCards();
 }
 
@@ -641,7 +642,15 @@ function renderBatchCards() {
         <input type="text" data-field="state" value="${escAttr(card.fields?.state || 'OH')}" maxlength="2" placeholder="State" />
         <input type="text" data-field="zip" value="${escAttr(card.fields?.zip || '')}" placeholder="ZIP" />
       </div>
-      <select data-field="division_num">${state.divisions.map(d => `<option value="${escAttr(d.num)}" ${(card.fields?.division_num || '') === d.num ? 'selected' : ''}>${escHtml(d.num)} — ${escHtml(d.name)}</option>`).join('')}</select>
+      <div class="batch-division-rows">
+        ${(card.division_nums || [state.divisions[0]?.num || '']).map((num, i) => `
+          <div class="batch-division-row">
+            <select data-division-index="${i}">${state.divisions.map(d => `<option value="${escAttr(d.num)}" ${num === d.num ? 'selected' : ''}>${escHtml(d.num)} — ${escHtml(d.name)}</option>`).join('')}</select>
+            ${i === 0 ? `<button type="button" class="btn btn-ghost btn-sm btn-inline" data-add-division="${card.id}">+</button>` : `<button type="button" class="btn btn-danger btn-sm btn-inline" data-remove-division="${card.id}" data-division-index="${i}">−</button>`}
+          </div>
+        `).join('')}
+      </div>
+      <textarea data-field="notes" rows="2" placeholder="Notes (manual entry)">${escHtml(card.fields?.notes || '')}</textarea>
       <div class="batch-dropzone" data-dropzone="${card.id}">Drag & drop quote PDF</div>
       <div class="batch-status">${escHtml(card.status || '')}</div>
       <button class="btn btn-primary btn-sm${card.savedId && !card.dirty ? ' batch-save-disabled' : ''}" data-save-card="${card.id}" ${card.savedId && !card.dirty ? 'disabled' : ''}>${card.savedId ? 'Save Changes' : 'Save Subcontractor'}</button>
@@ -653,6 +662,26 @@ function renderBatchCards() {
     renderBatchCards();
   }));
   grid.querySelectorAll('[data-save-card]').forEach(btn => btn.addEventListener('click', () => saveBatchCard(btn.dataset.saveCard)));
+  grid.querySelectorAll('[data-add-division]').forEach((btn) => btn.addEventListener('click', () => {
+    const cardState = state.batchCards.find(c => c.id === btn.dataset.addDivision);
+    if (!cardState) return;
+    cardState.division_nums.push(state.divisions[0]?.num || '');
+    renderBatchCards();
+  }));
+  grid.querySelectorAll('[data-remove-division]').forEach((btn) => btn.addEventListener('click', () => {
+    const cardState = state.batchCards.find(c => c.id === btn.dataset.removeDivision);
+    if (!cardState) return;
+    cardState.division_nums.splice(parseInt(btn.dataset.divisionIndex, 10), 1);
+    if (!cardState.division_nums.length) cardState.division_nums = [state.divisions[0]?.num || ''];
+    renderBatchCards();
+  }));
+  grid.querySelectorAll('.batch-division-row select').forEach((sel) => sel.addEventListener('change', () => {
+    const cardEl = sel.closest('.batch-card');
+    const cardState = state.batchCards.find(c => c.id === cardEl?.dataset.cardId);
+    if (!cardState) return;
+    const idx = parseInt(sel.dataset.divisionIndex, 10);
+    cardState.division_nums[idx] = sel.value;
+  }));
   grid.querySelectorAll('.batch-card [data-field]').forEach((input) => {
     input.addEventListener('input', () => {
       const cardEl = input.closest('.batch-card');
@@ -720,7 +749,8 @@ async function saveBatchCard(cardId) {
   card.querySelectorAll('[data-field]').forEach((el) => { payload[el.dataset.field] = el.value.trim(); });
   payload.website = cleanWebsiteValue(payload.website);
   if ((payload.website || '').includes('@')) payload.website = '';
-  payload.division_nums = [payload.division_num];
+  payload.division_nums = [...new Set((cardState.division_nums || []).filter(Boolean))];
+  payload.division_num = payload.division_nums[0];
   payload.labor_type = 'unknown';
   if (!payload.company_name || !payload.division_num) {
     statusEl.textContent = '❌ Company + Division required.';
@@ -737,6 +767,9 @@ async function saveBatchCard(cardId) {
       ? await api('PUT', `/api/subcontractors/${cardState.savedId}`, payload)
       : await api('POST', '/api/subcontractors', payload);
     cardState.savedId = saved?._id || cardState.savedId;
+    if (!(saved?.lat && saved?.lng)) {
+      await promptForManualCoordsOrSkip(saved?._id || cardState.savedId, 'We could not geocode that address. Paste coordinates or skip geocoding.');
+    }
     cardState.dirty = false;
     cardState.status = '✅ Saved.';
     await loadSubs();
@@ -1278,10 +1311,13 @@ function setupManualCoordsModal() {
   document.getElementById('manualCoordsClose').addEventListener('click', closeManualCoordsModal);
   document.getElementById('manualCoordsCancel').addEventListener('click', closeManualCoordsModal);
   document.getElementById('manualCoordsSave').addEventListener('click', saveManualCoords);
+  const skipBtn = document.getElementById('manualCoordsSkip');
+  if (skipBtn) skipBtn.addEventListener('click', () => closeManualCoordsModal(true));
 }
 
 function openManualCoordsModal(subId, options = {}) {
   state.manualCoordsId = subId;
+  state.manualCoordsResolve = typeof options.onComplete === 'function' ? options.onComplete : null;
   document.getElementById('manualCoordsReason').textContent = options.reason || 'Unable to geocode this address.';
   document.getElementById('fManualCoords').value = '';
   document.getElementById('manualCoordsError').classList.add('hidden');
@@ -1289,9 +1325,12 @@ function openManualCoordsModal(subId, options = {}) {
   document.getElementById('fManualCoords').focus();
 }
 
-function closeManualCoordsModal() {
+function closeManualCoordsModal(skipped = false) {
   document.getElementById('manualCoordsModal').classList.add('hidden');
+  const resolver = state.manualCoordsResolve;
+  state.manualCoordsResolve = null;
   state.manualCoordsId = null;
+  if (resolver) resolver({ skipped });
 }
 
 async function saveManualCoords() {
@@ -1310,13 +1349,19 @@ async function saveManualCoords() {
   try {
     await api('PUT', `/api/subcontractors/${state.manualCoordsId}`, { lat, lng });
     await loadSubs();
-    closeManualCoordsModal();
+    closeManualCoordsModal(false);
   } catch (e) {
     errorEl.textContent = e.message || 'Could not save coordinates.';
     errorEl.classList.remove('hidden');
   } finally {
     document.getElementById('manualCoordsSave').disabled = false;
   }
+}
+
+function promptForManualCoordsOrSkip(subId, reason) {
+  return new Promise((resolve) => {
+    openManualCoordsModal(subId, { reason, onComplete: resolve });
+  });
 }
 
 function parseLatLng(value) {
