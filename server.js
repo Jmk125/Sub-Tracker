@@ -39,7 +39,9 @@ const db = new Datastore({ filename: './data/subcontractors.db', autoload: true 
 const CSI_DIVISIONS = [
   { num: '01', name: 'General Requirements' },
   { num: '02', name: 'Existing Conditions' },
-  { num: '03', name: 'Concrete' },
+  { num: '03A', name: '03A - Building Concrete' },
+  { num: '03B', name: '03B - Polished Concrete' },
+  { num: '03C', name: '03C - Pre-Cast Concrete' },
   { num: '04', name: 'Masonry' },
   { num: '05', name: 'Metals' },
   { num: '06', name: 'Wood, Plastics, and Composites' },
@@ -200,7 +202,7 @@ Do not put email addresses in website.
 Format address for US geocoding with separated street/city/state/zip.
 
 Valid CSI division codes for this app:
-01, 02, 03, 04, 05, 06, 07, 08, 09A, 09B, 09C, 10, 11, 12, 13, 14, 21, 22, 23, 25, 26, 27, 28, 31, 32, 33, 34, 35, 40, 41, 48.`;
+01, 02, 03A, 03B, 03C, 04, 05, 06, 07, 08, 09A, 09B, 09C, 10, 11, 12, 13, 14, 21, 22, 23, 25, 26, 27, 28, 31, 32, 33, 34, 35, 40, 41, 48.`;
     const aiRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
