@@ -101,9 +101,20 @@ async function api(method, path, body) {
   };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
-  const data = await res.json();
+  const data = await parseJsonResponseSafe(res);
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+async function parseJsonResponseSafe(res) {
+  const rawText = await res.text();
+  if (!rawText) return {};
+  try {
+    return JSON.parse(rawText);
+  } catch (err) {
+    const snippet = rawText.slice(0, 180).replace(/\s+/g, ' ').trim();
+    throw new Error(`Server returned non-JSON response (HTTP ${res.status}). ${snippet}`);
+  }
 }
 
 // ── Load Data ──────────────────────────────────────────────
@@ -658,7 +669,7 @@ async function scanBatchCardPdf(cardId, file) {
   formData.append('quotePdf', file);
   try {
     const res = await fetch('/api/ai/parse-quote', { method: 'POST', body: formData });
-    const data = await res.json();
+    const data = await parseJsonResponseSafe(res);
     if (!res.ok) throw new Error(data.error || 'AI parsing failed');
     Object.entries(data.fields || {}).forEach(([k, v]) => {
       const input = card.querySelector(`[data-field="${k}"]`);
