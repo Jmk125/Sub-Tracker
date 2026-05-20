@@ -613,7 +613,7 @@ function setupBatchModal() {
 
 function addBatchCard() {
   const id = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-  state.batchCards.push({ id, status: 'Drop quote PDF here' });
+  state.batchCards.push({ id, status: 'Drop quote PDF here', savedId: null, dirty: false, isSaving: false, fields: { state: 'OH' } });
   renderBatchCards();
 }
 
@@ -625,21 +625,21 @@ function renderBatchCards() {
         <strong>Card ${idx + 1}</strong>
         <button class="btn btn-danger btn-sm btn-inline" data-remove-card="${card.id}">Remove</button>
       </div>
-      <input type="text" data-field="company_name" placeholder="Company Name *" />
-      <input type="text" data-field="contact_name" placeholder="Contact Name" />
-      <input type="tel" data-field="contact_phone" placeholder="Phone" />
-      <input type="email" data-field="contact_email" placeholder="Email" />
-      <input type="text" data-field="address" placeholder="Street Address" />
+      <input type="text" data-field="company_name" value="${escAttr(card.fields?.company_name || '')}" placeholder="Company Name *" />
+      <input type="text" data-field="contact_name" value="${escAttr(card.fields?.contact_name || '')}" placeholder="Contact Name" />
+      <input type="tel" data-field="contact_phone" value="${escAttr(card.fields?.contact_phone || '')}" placeholder="Phone" />
+      <input type="email" data-field="contact_email" value="${escAttr(card.fields?.contact_email || '')}" placeholder="Email" />
+      <input type="text" data-field="website" value="${escAttr(card.fields?.website || '')}" placeholder="https://example.com" />
+      <input type="text" data-field="address" value="${escAttr(card.fields?.address || '')}" placeholder="Street Address" />
       <div class="batch-card-row">
-        <input type="text" data-field="city" placeholder="City" />
-        <input type="text" data-field="state" value="OH" maxlength="2" placeholder="State" />
-        <input type="text" data-field="zip" placeholder="ZIP" />
+        <input type="text" data-field="city" value="${escAttr(card.fields?.city || '')}" placeholder="City" />
+        <input type="text" data-field="state" value="${escAttr(card.fields?.state || 'OH')}" maxlength="2" placeholder="State" />
+        <input type="text" data-field="zip" value="${escAttr(card.fields?.zip || '')}" placeholder="ZIP" />
       </div>
-      <select data-field="division_num">${state.divisions.map(d => `<option value="${escAttr(d.num)}">${escHtml(d.num)} — ${escHtml(d.name)}</option>`).join('')}</select>
-      <textarea data-field="notes" rows="2" placeholder="Notes / scope"></textarea>
+      <select data-field="division_num">${state.divisions.map(d => `<option value="${escAttr(d.num)}" ${(card.fields?.division_num || '') === d.num ? 'selected' : ''}>${escHtml(d.num)} — ${escHtml(d.name)}</option>`).join('')}</select>
       <div class="batch-dropzone" data-dropzone="${card.id}">Drag & drop quote PDF</div>
       <div class="batch-status">${escHtml(card.status || '')}</div>
-      <button class="btn btn-primary btn-sm" data-save-card="${card.id}">Save Subcontractor</button>
+      <button class="btn btn-primary btn-sm${card.savedId && !card.dirty ? ' batch-save-disabled' : ''}" data-save-card="${card.id}" ${card.savedId && !card.dirty ? 'disabled' : ''}>${card.savedId ? 'Save Changes' : 'Save Subcontractor'}</button>
     </div>
   `).join('');
 
@@ -648,6 +648,23 @@ function renderBatchCards() {
     renderBatchCards();
   }));
   grid.querySelectorAll('[data-save-card]').forEach(btn => btn.addEventListener('click', () => saveBatchCard(btn.dataset.saveCard)));
+  grid.querySelectorAll('.batch-card [data-field]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const cardEl = input.closest('.batch-card');
+      const cardId = cardEl?.dataset.cardId;
+      const cardState = state.batchCards.find(c => c.id === cardId);
+      if (!cardState) return;
+      cardState.fields[input.dataset.field] = input.value;
+      if (cardState.savedId) {
+        cardState.dirty = true;
+        cardState.status = '✏️ Changes pending. Click Save Changes.';
+        const btn = cardEl.querySelector('[data-save-card]');
+        if (btn) btn.disabled = false;
+        const status = cardEl.querySelector('.batch-status');
+        if (status) status.textContent = cardState.status;
+      }
+    });
+  });
   grid.querySelectorAll('.batch-dropzone').forEach(zone => {
     zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('active'); });
     zone.addEventListener('dragleave', () => zone.classList.remove('active'));
@@ -662,8 +679,9 @@ function renderBatchCards() {
 
 async function scanBatchCardPdf(cardId, file) {
   const card = document.querySelector(`[data-card-id="${cardId}"]`);
+  const cardState = state.batchCards.find(c => c.id === cardId);
   const statusEl = card?.querySelector('.batch-status');
-  if (!card || !statusEl) return;
+  if (!card || !statusEl || !cardState) return;
   statusEl.textContent = '⏳ Scanning PDF with AI...';
   const formData = new FormData();
   formData.append('quotePdf', file);
@@ -673,8 +691,13 @@ async function scanBatchCardPdf(cardId, file) {
     if (!res.ok) throw new Error(data.error || 'AI parsing failed');
     Object.entries(data.fields || {}).forEach(([k, v]) => {
       const input = card.querySelector(`[data-field="${k}"]`);
-      if (input && typeof v === 'string' && v.trim()) input.value = v.trim();
+      if (input && typeof v === 'string' && v.trim()) {
+        input.value = v.trim();
+        cardState.fields[k] = v.trim();
+      }
     });
+    const websiteInput = card.querySelector('[data-field="website"]');
+    if (websiteInput && websiteInput.value.includes('@')) websiteInput.value = '';
     statusEl.textContent = '✅ AI fields inserted. Review and click Save.';
   } catch (err) {
     statusEl.textContent = `❌ ${err.message}`;
@@ -684,9 +707,14 @@ async function scanBatchCardPdf(cardId, file) {
 async function saveBatchCard(cardId) {
   const card = document.querySelector(`[data-card-id="${cardId}"]`);
   if (!card) return;
+  const cardState = state.batchCards.find(c => c.id === cardId);
+  if (!cardState || cardState.isSaving) return;
   const statusEl = card.querySelector('.batch-status');
+  const saveBtn = card.querySelector('[data-save-card]');
   const payload = {};
   card.querySelectorAll('[data-field]').forEach((el) => { payload[el.dataset.field] = el.value.trim(); });
+  payload.website = cleanWebsiteValue(payload.website);
+  if ((payload.website || '').includes('@')) payload.website = '';
   payload.division_nums = [payload.division_num];
   payload.labor_type = 'unknown';
   if (!payload.company_name || !payload.division_num) {
@@ -694,11 +722,24 @@ async function saveBatchCard(cardId) {
     return;
   }
   try {
-    await api('POST', '/api/subcontractors', payload);
-    statusEl.textContent = '✅ Saved.';
+    cardState.isSaving = true;
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = cardState.savedId ? 'Saving Changes…' : 'Saving…';
+    }
+    statusEl.textContent = cardState.savedId ? '⏳ Saving changes...' : '⏳ Saving subcontractor...';
+    const saved = cardState.savedId
+      ? await api('PUT', `/api/subcontractors/${cardState.savedId}`, payload)
+      : await api('POST', '/api/subcontractors', payload);
+    cardState.savedId = saved?._id || cardState.savedId;
+    cardState.dirty = false;
+    cardState.status = '✅ Saved.';
     await loadSubs();
+    renderBatchCards();
   } catch (err) {
     statusEl.textContent = `❌ ${err.message}`;
+  } finally {
+    cardState.isSaving = false;
   }
 }
 

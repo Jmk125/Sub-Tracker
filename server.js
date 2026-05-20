@@ -181,7 +181,7 @@ app.post('/api/ai/parse-quote', upload.single('quotePdf'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'quotePdf file is required.' });
   try {
     const dataUrl = `data:application/pdf;base64,${req.file.buffer.toString('base64')}`;
-    const prompt = 'Extract subcontractor quote contact data. Return ONLY a JSON object with keys: company_name, contact_name, contact_phone, contact_email, address, city, state, zip, notes, division_num. Use empty string when unknown.';
+    const prompt = 'Extract subcontractor quote contact data. Return ONLY a JSON object with keys: company_name, contact_name, contact_phone, contact_email, website, address, city, state, zip, division_num. Use empty string when unknown. Do not put email addresses in website.';
     const aiRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
