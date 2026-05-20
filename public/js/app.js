@@ -6,7 +6,7 @@
 const state = {
   subs: [],
   divisions: [],
-  filter: { divisions: [], search: '', notesSearch: '', mapSearch: '', divisionMode: 'all' },
+  filter: { divisions: [], search: '', notesSearch: '', mapSearch: '', mapNotesSearch: '', divisionMode: 'all' },
   sort: { field: 'company_name', dir: 1 },
   editingId: null,
   pendingDeleteId: null,
@@ -163,13 +163,16 @@ function resetAllFilters() {
   state.filter.search = '';
   state.filter.notesSearch = '';
   state.filter.mapSearch = '';
+  state.filter.mapNotesSearch = '';
   selectAllDivisions();
   const searchInput = document.getElementById('searchInput');
   const notesSearchInput = document.getElementById('notesSearchInput');
   const mapSearchInput = document.getElementById('mapSearchInput');
+  const mapNotesSearchInput = document.getElementById('mapNotesSearchInput');
   if (searchInput) searchInput.value = '';
   if (notesSearchInput) notesSearchInput.value = '';
   if (mapSearchInput) mapSearchInput.value = '';
+  if (mapNotesSearchInput) mapNotesSearchInput.value = '';
   renderList();
   if (state.mapReady) renderPins();
   renderDataTab();
@@ -240,6 +243,10 @@ function setupFilters() {
   });
   document.getElementById('mapSearchInput').addEventListener('input', e => {
     state.filter.mapSearch = e.target.value.toLowerCase();
+    if (state.mapReady) renderPins();
+  });
+  document.getElementById('mapNotesSearchInput').addEventListener('input', e => {
+    state.filter.mapNotesSearch = e.target.value.toLowerCase();
     if (state.mapReady) renderPins();
   });
 
@@ -1751,14 +1758,20 @@ function renderPins() {
 
 function getMapFilteredSubs() {
   let list = getFilteredSubs().filter(s => s.lat && s.lng);
-  if (!state.filter.mapSearch) return list;
-  const q = state.filter.mapSearch;
-  return list.filter((s) =>
-    (s.company_name || '').toLowerCase().includes(q) ||
-    (s.city || '').toLowerCase().includes(q) ||
-    (s.contact_name || '').toLowerCase().includes(q) ||
-    (s.division_name || '').toLowerCase().includes(q)
-  );
+  if (state.filter.mapSearch) {
+    const q = state.filter.mapSearch;
+    list = list.filter((s) =>
+      (s.company_name || '').toLowerCase().includes(q) ||
+      (s.city || '').toLowerCase().includes(q) ||
+      (s.contact_name || '').toLowerCase().includes(q) ||
+      (s.division_name || '').toLowerCase().includes(q)
+    );
+  }
+  if (state.filter.mapNotesSearch) {
+    const notesQ = state.filter.mapNotesSearch;
+    list = list.filter((s) => (s.notes || '').toLowerCase().includes(notesQ));
+  }
+  return list;
 }
 
 async function loadBoundaryCatalog() {

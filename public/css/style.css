@@ -450,6 +450,18 @@ body {
   margin-bottom: 10px;
 }
 
+.map-top-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.map-top-toolbar .map-search-wrap,
+.map-top-toolbar .map-notes-search-wrap {
+  flex: 1;
+  margin-bottom: 0;
+}
+
 .legend-item {
   display: flex;
   align-items: center;
