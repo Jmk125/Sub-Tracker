@@ -28,6 +28,7 @@ const state = {
   tempPinMarker: null,
   manualCoordsId: null,
   exportColumns: [],
+  batchCards: [],
 };
 
 // Division color palette (for map pins)
@@ -89,6 +90,7 @@ async function init() {
   setupConfirmModal();
   setupExportModal();
   setupRecentProjectAddressUi();
+  setupBatchModal();
 }
 
 // ── API ────────────────────────────────────────────────────
@@ -99,9 +101,20 @@ async function api(method, path, body) {
   };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
-  const data = await res.json();
+  const data = await parseJsonResponseSafe(res);
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+async function parseJsonResponseSafe(res) {
+  const rawText = await res.text();
+  if (!rawText) return {};
+  try {
+    return JSON.parse(rawText);
+  } catch (err) {
+    const snippet = rawText.slice(0, 180).replace(/\s+/g, ' ').trim();
+    throw new Error(`Server returned non-JSON response (HTTP ${res.status}). ${snippet}`);
+  }
 }
 
 // ── Load Data ──────────────────────────────────────────────
@@ -581,6 +594,112 @@ function setupModal() {
   setupPhoneFormatting();
   setupLaborTypeInputs();
   setupManualCoordsModal();
+}
+
+function setupBatchModal() {
+  const modal = document.getElementById('batchModal');
+  document.getElementById('btnBatchAddSubs').addEventListener('click', () => {
+    modal.classList.remove('hidden');
+    if (!state.batchCards.length) addBatchCard();
+  });
+  document.getElementById('batchModalClose').addEventListener('click', () => modal.classList.add('hidden'));
+  modal.querySelector('.modal-backdrop').addEventListener('click', () => modal.classList.add('hidden'));
+  document.getElementById('btnBatchAddCard').addEventListener('click', addBatchCard);
+  document.getElementById('btnBatchClearCards').addEventListener('click', () => {
+    state.batchCards = [];
+    renderBatchCards();
+  });
+}
+
+function addBatchCard() {
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  state.batchCards.push({ id, status: 'Drop quote PDF here' });
+  renderBatchCards();
+}
+
+function renderBatchCards() {
+  const grid = document.getElementById('batchCardGrid');
+  grid.innerHTML = state.batchCards.map((card, idx) => `
+    <div class="batch-card" data-card-id="${card.id}">
+      <div class="batch-card-head">
+        <strong>Card ${idx + 1}</strong>
+        <button class="btn btn-danger btn-sm btn-inline" data-remove-card="${card.id}">Remove</button>
+      </div>
+      <input type="text" data-field="company_name" placeholder="Company Name *" />
+      <input type="text" data-field="contact_name" placeholder="Contact Name" />
+      <input type="tel" data-field="contact_phone" placeholder="Phone" />
+      <input type="email" data-field="contact_email" placeholder="Email" />
+      <input type="text" data-field="address" placeholder="Street Address" />
+      <div class="batch-card-row">
+        <input type="text" data-field="city" placeholder="City" />
+        <input type="text" data-field="state" value="OH" maxlength="2" placeholder="State" />
+        <input type="text" data-field="zip" placeholder="ZIP" />
+      </div>
+      <select data-field="division_num">${state.divisions.map(d => `<option value="${escAttr(d.num)}">${escHtml(d.num)} — ${escHtml(d.name)}</option>`).join('')}</select>
+      <textarea data-field="notes" rows="2" placeholder="Notes / scope"></textarea>
+      <div class="batch-dropzone" data-dropzone="${card.id}">Drag & drop quote PDF</div>
+      <div class="batch-status">${escHtml(card.status || '')}</div>
+      <button class="btn btn-primary btn-sm" data-save-card="${card.id}">Save Subcontractor</button>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('[data-remove-card]').forEach(btn => btn.addEventListener('click', () => {
+    state.batchCards = state.batchCards.filter(c => c.id !== btn.dataset.removeCard);
+    renderBatchCards();
+  }));
+  grid.querySelectorAll('[data-save-card]').forEach(btn => btn.addEventListener('click', () => saveBatchCard(btn.dataset.saveCard)));
+  grid.querySelectorAll('.batch-dropzone').forEach(zone => {
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('active'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('active'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('active');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) scanBatchCardPdf(zone.dataset.dropzone, file);
+    });
+  });
+}
+
+async function scanBatchCardPdf(cardId, file) {
+  const card = document.querySelector(`[data-card-id="${cardId}"]`);
+  const statusEl = card?.querySelector('.batch-status');
+  if (!card || !statusEl) return;
+  statusEl.textContent = '⏳ Scanning PDF with AI...';
+  const formData = new FormData();
+  formData.append('quotePdf', file);
+  try {
+    const res = await fetch('/api/ai/parse-quote', { method: 'POST', body: formData });
+    const data = await parseJsonResponseSafe(res);
+    if (!res.ok) throw new Error(data.error || 'AI parsing failed');
+    Object.entries(data.fields || {}).forEach(([k, v]) => {
+      const input = card.querySelector(`[data-field="${k}"]`);
+      if (input && typeof v === 'string' && v.trim()) input.value = v.trim();
+    });
+    statusEl.textContent = '✅ AI fields inserted. Review and click Save.';
+  } catch (err) {
+    statusEl.textContent = `❌ ${err.message}`;
+  }
+}
+
+async function saveBatchCard(cardId) {
+  const card = document.querySelector(`[data-card-id="${cardId}"]`);
+  if (!card) return;
+  const statusEl = card.querySelector('.batch-status');
+  const payload = {};
+  card.querySelectorAll('[data-field]').forEach((el) => { payload[el.dataset.field] = el.value.trim(); });
+  payload.division_nums = [payload.division_num];
+  payload.labor_type = 'unknown';
+  if (!payload.company_name || !payload.division_num) {
+    statusEl.textContent = '❌ Company + Division required.';
+    return;
+  }
+  try {
+    await api('POST', '/api/subcontractors', payload);
+    statusEl.textContent = '✅ Saved.';
+    await loadSubs();
+  } catch (err) {
+    statusEl.textContent = `❌ ${err.message}`;
+  }
 }
 
 function openAddModal() {
