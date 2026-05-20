@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const http = require('http');
+const multer = require('multer');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3007', 10);
@@ -54,6 +55,7 @@ const BOUNDARY_COLORS = ['#f4d03f', '#3fb0ff', '#ff7f50', '#7ed957', '#f78ff8', 
 
 app.use(express.json());
 app.use(express.static('public'));
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 function extractCountyFromAddress(address) {
   if (!address || typeof address !== 'object') return '';
@@ -118,6 +120,41 @@ app.post('/api/geocode-address', async (req, res) => {
       return res.status(404).json({ error: 'Could not geocode that address.' });
     }
     res.json(geo);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/ai/parse-quote', upload.single('quotePdf'), async (req, res) => {
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(400).json({ error: 'OPENAI_API_KEY not configured on server.' });
+  }
+  if (!req.file) return res.status(400).json({ error: 'quotePdf file is required.' });
+  try {
+    const dataUrl = `data:application/pdf;base64,${req.file.buffer.toString('base64')}`;
+    const prompt = 'Extract subcontractor quote contact data as JSON with keys: company_name,contact_name,contact_phone,contact_email,address,city,state,zip,notes,division_num. Return only valid JSON.';
+    const aiRes = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+        input: [
+          { role: 'user', content: [{ type: 'input_text', text: prompt }, { type: 'input_file', filename: req.file.originalname, file_data: dataUrl }] }
+        ],
+      }),
+    });
+    const aiData = await aiRes.json();
+    if (!aiRes.ok) throw new Error(aiData.error?.message || 'OpenAI API request failed');
+    const textOut = aiData.output_text || '';
+    let fields = {};
+    try { fields = JSON.parse(textOut); } catch (e) {
+      const jsonMatch = textOut.match(/\{[\s\S]*\}/);
+      if (jsonMatch) fields = JSON.parse(jsonMatch[0]);
+    }
+    res.json({ fields });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
