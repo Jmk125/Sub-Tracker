@@ -35,6 +35,7 @@ You can now batch-enter subcontractors by opening **Batch Add** in the header:
    ```bash
    OPENAI_API_KEY=...
    ```
+   Yes, the filename should be exactly `.env` in the project root (same folder as `server.js`).
 3. (Optional) pick model:
    ```bash
    OPENAI_MODEL=gpt-4.1
@@ -45,6 +46,7 @@ You can now batch-enter subcontractors by opening **Batch Add** in the header:
    ```bash
    npm install multer
    ```
+5. Restart the server after editing `.env` so updated keys are loaded.
 
 ## HTTPS (recommended for clipboard auto-paste)
 

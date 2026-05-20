@@ -8,6 +8,24 @@ const http = require('http');
 const multer = require('multer');
 
 const app = express();
+const ENV_PATH = path.join(__dirname, '.env');
+if (fs.existsSync(ENV_PATH)) {
+  const envText = fs.readFileSync(ENV_PATH, 'utf8');
+  envText.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex <= 0) return;
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!Object.prototype.hasOwnProperty.call(process.env, key)) {
+      process.env[key] = value;
+    }
+  });
+}
 const PORT = parseInt(process.env.PORT || '3007', 10);
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT || '3443', 10);
 
