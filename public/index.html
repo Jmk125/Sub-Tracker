@@ -34,6 +34,7 @@
             </details>
           </div>
           <button id="btnExportSubs" class="btn btn-ghost">⇩ Export Excel</button>
+          <button id="btnBatchAddSubs" class="btn btn-ghost">▦ Batch Add</button>
           <button id="btnAddSub" class="btn btn-primary">+ Add Subcontractor</button>
         </div>
       </div>
@@ -172,6 +173,24 @@
     </div>
   </div>
 
+  <div id="batchModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box batch-modal-box">
+      <div class="modal-header">
+        <h2>Batch Add Subcontractors</h2>
+        <button class="modal-close" id="batchModalClose">✕</button>
+      </div>
+      <div class="modal-body batch-modal-body">
+        <p class="export-copy">Add as many cards as needed, then drag/drop quote PDFs onto each card to auto-fill fields with AI.</p>
+        <div class="batch-toolbar">
+          <button id="btnBatchAddCard" class="btn btn-primary btn-sm">+ Add Card</button>
+          <button id="btnBatchClearCards" class="btn btn-ghost btn-sm">Clear All Cards</button>
+        </div>
+        <div id="batchCardGrid" class="batch-card-grid"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Add/Edit Modal -->
   <div id="modal" class="modal hidden">
     <div class="modal-backdrop"></div>
@@ -300,6 +319,7 @@
         <div id="manualCoordsError" class="manual-coords-error hidden"></div>
       </div>
       <div class="modal-footer">
+        <button class="btn btn-ghost" id="manualCoordsSkip">Skip Geocoding</button>
         <button class="btn btn-ghost" id="manualCoordsCancel">Cancel</button>
         <button class="btn btn-primary" id="manualCoordsSave">Save Coordinates</button>
       </div>
