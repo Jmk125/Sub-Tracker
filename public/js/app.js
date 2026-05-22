@@ -30,6 +30,9 @@ const state = {
   manualCoordsResolve: null,
   exportColumns: [],
   batchCards: [],
+  databases: [],
+  selectedDatabaseIds: [],
+  importJobs: [],
 };
 
 // Division color palette (for map pins)
@@ -92,6 +95,8 @@ async function init() {
   setupExportModal();
   setupRecentProjectAddressUi();
   setupBatchModal();
+  setupDatabaseModal();
+  await loadDatabases();
 }
 
 // ── API ────────────────────────────────────────────────────
@@ -134,13 +139,47 @@ async function loadDivisions() {
 }
 
 async function loadSubs() {
-  state.subs = await api('GET', '/api/subcontractors');
+  const qs = state.selectedDatabaseIds.length ? `?database_ids=${encodeURIComponent(state.selectedDatabaseIds.join(','))}` : '';
+  state.subs = await api('GET', `/api/subcontractors${qs}`);
   renderList();
   renderDataTab();
   if (state.mapReady) renderPins();
   updateBadge();
 }
 
+
+async function loadDatabases() {
+  state.databases = await api('GET', '/api/databases');
+  if (!state.selectedDatabaseIds.length) state.selectedDatabaseIds = state.databases.filter(d => d.active !== false).map(d => d.id);
+  renderDatabaseMenu();
+  await loadSubs();
+}
+
+function renderDatabaseMenu() {
+  const menu = document.getElementById('databaseSelectorMenu');
+  const summary = document.getElementById('databaseSelectorSummary');
+  if (!menu || !summary) return;
+  menu.innerHTML = '';
+  state.databases.forEach((db) => {
+    const row = document.createElement('label');
+    row.className = 'division-filter-item';
+    row.innerHTML = `<input type="checkbox" value="${escAttr(db.id)}" ${state.selectedDatabaseIds.includes(db.id) ? 'checked' : ''}/> ${escHtml(db.name)}`;
+    menu.appendChild(row);
+  });
+  const controls = document.createElement('div');
+  controls.innerHTML = '<button class="btn btn-sm btn-primary" id="btnAddDatabase" type="button">+ Add</button> <button class="btn btn-sm btn-danger" id="btnDeleteDatabase" type="button">Delete</button>';
+  menu.appendChild(controls);
+  const selectedNames = state.databases.filter(d => state.selectedDatabaseIds.includes(d.id)).map(d => d.name);
+  summary.textContent = selectedNames.length ? `Database: ${selectedNames.join(', ')}` : 'Database: None';
+
+  menu.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', async () => {
+    state.selectedDatabaseIds = [...menu.querySelectorAll('input[type="checkbox"]:checked')].map(i => i.value);
+    renderDatabaseMenu();
+    await loadSubs();
+  }));
+  document.getElementById('btnAddDatabase')?.addEventListener('click', () => openDatabaseModal('add'));
+  document.getElementById('btnDeleteDatabase')?.addEventListener('click', () => openDatabaseModal('delete'));
+}
 // ── Tabs ───────────────────────────────────────────────────
 function setupTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
@@ -614,6 +653,7 @@ function setupBatchModal() {
   document.getElementById('btnBatchAddSubs').addEventListener('click', () => {
     modal.classList.remove('hidden');
     if (!state.batchCards.length) addBatchCard();
+  document.getElementById('batchImportFile')?.addEventListener('change', handleBatchImportFile);
   });
   document.getElementById('batchModalClose').addEventListener('click', closeBatchModal);
   modal.querySelector('.modal-backdrop').addEventListener('click', closeBatchModal);
@@ -1284,6 +1324,66 @@ function buildSheetName(division) {
   return raw.replace(/[\\/?*[\]:]/g, '').slice(0, 31);
 }
 
+
+function setupDatabaseModal() {
+  const modal = document.getElementById('databaseModal');
+  if (!modal) return;
+  modal.querySelector('.modal-backdrop').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalClose').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalCancel').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalSave').addEventListener('click', saveDatabaseModal);
+}
+
+function openDatabaseModal(mode) {
+  state.databaseModalMode = mode;
+  document.getElementById('databaseModalTitle').textContent = mode === 'add' ? 'Add Database' : 'Delete Database';
+  document.getElementById('databaseModalAddFields').classList.toggle('hidden', mode !== 'add');
+  document.getElementById('databaseModalDeleteFields').classList.toggle('hidden', mode !== 'delete');
+  if (mode === 'delete') {
+    const select = document.getElementById('fDatabaseDelete');
+    const deletable = state.databases.filter((d) => d.id !== 'subcontractors');
+    select.innerHTML = deletable.map((d) => `<option value="${escAttr(d.id)}">${escHtml(d.name)}</option>`).join('');
+  }
+  document.getElementById('databaseModal').classList.remove('hidden');
+}
+
+function closeDatabaseModal() { document.getElementById('databaseModal').classList.add('hidden'); }
+
+async function saveDatabaseModal() {
+  if (state.databaseModalMode === 'add') {
+    const name = document.getElementById('fDatabaseName').value.trim();
+    if (!name) return;
+    await api('POST', '/api/databases', { name });
+  } else {
+    const id = document.getElementById('fDatabaseDelete').value;
+    if (!id) return;
+    const ok = await openConfirmPromise(`Delete database "${id}"? This will remove the .db file.`);
+    if (!ok) return;
+    await api('DELETE', `/api/databases/${encodeURIComponent(id)}`);
+  }
+  closeDatabaseModal();
+  await loadDatabases();
+}
+
+function openConfirmPromise(message) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirmModal');
+    const msg = document.getElementById('confirmMsg');
+    const del = document.getElementById('confirmDelete');
+    const cancel = document.getElementById('confirmCancel');
+    msg.textContent = message;
+    const onCancel = () => { cleanup(); resolve(false); };
+    const onDelete = () => { cleanup(); resolve(true); };
+    function cleanup() {
+      del.removeEventListener('click', onDelete);
+      cancel.removeEventListener('click', onCancel);
+      modal.classList.add('hidden');
+    }
+    del.addEventListener('click', onDelete, { once: true });
+    cancel.addEventListener('click', onCancel, { once: true });
+    modal.classList.remove('hidden');
+  });
+}
 // ── Confirm Delete ─────────────────────────────────────────
 function setupConfirmModal() {
   document.getElementById('confirmCancel').addEventListener('click', () => {
@@ -2162,3 +2262,57 @@ function normalizeWebsite(rawWebsite) {
 
 // ── Boot ───────────────────────────────────────────────────
 init();
+
+
+async function handleBatchImportFile(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const rows = await parsePipelineFile(file);
+  state.importJobs = rows.map((r, i) => ({ id: `job-${Date.now()}-${i}`, company_name: r.company_name, status: 'queued', subId: null }));
+  renderImportJobs();
+  processImportQueue(rows);
+}
+
+async function parsePipelineFile(file) {
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+  return rows.slice(1).map((r) => ({
+    company_name: (r[0] || '').toString().trim(),
+    contact_name: `${(r[1] || '').toString().trim()} ${(r[2] || '').toString().trim()}`.trim(),
+    address: (r[3] || '').toString().trim(),
+    city: (r[4] || '').toString().trim(),
+    state: (r[5] || 'OH').toString().trim(),
+    zip: (r[6] || '').toString().trim(),
+    contact_phone: (r[7] || '').toString().trim(),
+    contact_email: (r[11] || '').toString().trim(),
+    labor_type: String(r[17] || '').toLowerCase().includes('non') ? 'non_union' : (String(r[17] || '').toLowerCase().includes('union') ? 'union' : 'unknown'),
+  })).filter(r => r.company_name);
+}
+
+async function processImportQueue(rows) {
+  for (let i=0;i<rows.length;i++) {
+    const row=rows[i]; const job=state.importJobs[i];
+    try {
+      job.status='importing'; renderImportJobs();
+      const saved = await api('POST','/api/subcontractors',{...row, division_nums:[state.divisions[0]?.num || '01'], database_ids: state.selectedDatabaseIds, skip_geocode: true});
+      job.subId=saved._id; job.status='geocoding'; renderImportJobs();
+      await api('POST',`/api/subcontractors/${saved._id}/geocode`);
+      job.status='complete';
+    } catch (err) {
+      job.status=`failed: ${err.message}`;
+    }
+    renderImportJobs();
+  }
+  await loadSubs();
+}
+
+function renderImportJobs() {
+  const el = document.getElementById('batchImportStatus');
+  if (!el) return;
+  if (!state.importJobs.length) { el.classList.add('hidden'); el.innerHTML=''; return; }
+  el.classList.remove('hidden');
+  el.innerHTML = state.importJobs.map((j) => `<div class="import-job-row ${j.status==='complete'?'is-complete':''}"><strong>${escHtml(j.company_name)}</strong> — ${escHtml(j.status)} ${j.status.startsWith('failed')&&j.subId?`<button data-manual-coords="${j.subId}" class="btn btn-ghost btn-sm">Set Coords</button>`:''}</div>`).join('');
+  el.querySelectorAll('[data-manual-coords]').forEach((b)=>b.addEventListener('click',()=>openManualCoordsModal(b.dataset.manualCoords,{reason:'Paste coordinates for failed geocode'})));
+}
