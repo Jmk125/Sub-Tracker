@@ -23,6 +23,10 @@
           <span class="logo-tag">CMR</span>
           <div class="header-titles">
             <h1>Sub Database</h1>
+            <details id="databaseSelector" class="division-filter-dropdown database-selector">
+              <summary id="databaseSelectorSummary">Database: Default</summary>
+              <div id="databaseSelectorMenu" class="division-filter-menu"></div>
+            </details>
           </div>
         </div>
         <div class="header-controls">
@@ -66,6 +70,10 @@
           <input type="text" id="notesSearchInput" placeholder="Search notes..." />
         </div>
         <div class="sort-controls">
+          <label class="checkbox-option" style="margin-right:8px;">
+            <input type="checkbox" id="onlyUngeocoded" />
+            Only ungeocoded
+          </label>
           <label>Sort by</label>
           <select id="sortField">
             <option value="company_name">Company Name</option>
@@ -190,8 +198,11 @@
         <p class="export-copy">Add as many cards as needed, then drag/drop quote PDFs onto each card to auto-fill fields with AI.</p>
         <div class="batch-toolbar">
           <button id="btnBatchAddCard" class="btn btn-primary btn-sm">+ Add Card</button>
+          <label class="btn btn-ghost btn-sm" for="batchImportFile">⇪ Import File</label>
+          <input id="batchImportFile" type="file" accept=",.csv,.xls,.xlsx" hidden />
           <button id="btnBatchClearCards" class="btn btn-ghost btn-sm">Clear All Cards</button>
         </div>
+        <div id="batchImportStatus" class="batch-import-status hidden"></div>
         <div id="batchCardGrid" class="batch-card-grid"></div>
       </div>
     </div>
@@ -289,6 +300,32 @@
   </div>
 
   <!-- Delete confirm -->
+
+  <div id="databaseModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box modal-sm">
+      <div class="modal-header">
+        <h2 id="databaseModalTitle">Add Database</h2>
+        <button class="modal-close" id="databaseModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="databaseModalAddFields">
+          <label for="fDatabaseName">Database Name</label>
+          <input type="text" id="fDatabaseName" placeholder="e.g. Cincinnati Subs" />
+        </div>
+        <div id="databaseModalDeleteFields" class="hidden">
+          <label for="fDatabaseDelete">Select Database</label>
+          <select id="fDatabaseDelete"></select>
+          <p class="manual-coords-copy">Deleting removes the .db file and all subcontractors in it.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="databaseModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="databaseModalSave">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div id="confirmModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-box modal-sm">

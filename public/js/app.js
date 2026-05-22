@@ -6,7 +6,7 @@
 const state = {
   subs: [],
   divisions: [],
-  filter: { divisions: [], search: '', notesSearch: '', mapSearch: '', mapNotesSearch: '', divisionMode: 'all' },
+  filter: { divisions: [], search: '', notesSearch: '', mapSearch: '', mapNotesSearch: '', divisionMode: 'all', onlyUngeocoded: false },
   sort: { field: 'company_name', dir: 1 },
   editingId: null,
   pendingDeleteId: null,
@@ -30,6 +30,9 @@ const state = {
   manualCoordsResolve: null,
   exportColumns: [],
   batchCards: [],
+  databases: [],
+  selectedDatabaseIds: [],
+  importJobs: [],
 };
 
 // Division color palette (for map pins)
@@ -92,6 +95,8 @@ async function init() {
   setupExportModal();
   setupRecentProjectAddressUi();
   setupBatchModal();
+  setupDatabaseModal();
+  await loadDatabases();
 }
 
 // ── API ────────────────────────────────────────────────────
@@ -134,13 +139,47 @@ async function loadDivisions() {
 }
 
 async function loadSubs() {
-  state.subs = await api('GET', '/api/subcontractors');
+  const qs = state.selectedDatabaseIds.length ? `?database_ids=${encodeURIComponent(state.selectedDatabaseIds.join(','))}` : '';
+  state.subs = await api('GET', `/api/subcontractors${qs}`);
   renderList();
   renderDataTab();
   if (state.mapReady) renderPins();
   updateBadge();
 }
 
+
+async function loadDatabases() {
+  state.databases = await api('GET', '/api/databases');
+  if (!state.selectedDatabaseIds.length) state.selectedDatabaseIds = state.databases[0] ? [state.databases[0].id] : [];
+  renderDatabaseMenu();
+  await loadSubs();
+}
+
+function renderDatabaseMenu() {
+  const menu = document.getElementById('databaseSelectorMenu');
+  const summary = document.getElementById('databaseSelectorSummary');
+  if (!menu || !summary) return;
+  menu.innerHTML = '';
+  state.databases.forEach((db) => {
+    const row = document.createElement('label');
+    row.className = 'division-filter-item';
+    row.innerHTML = `<input type="checkbox" value="${escAttr(db.id)}" ${state.selectedDatabaseIds.includes(db.id) ? 'checked' : ''}/> ${escHtml(db.name)}`;
+    menu.appendChild(row);
+  });
+  const controls = document.createElement('div');
+  controls.innerHTML = '<button class="btn btn-sm btn-primary" id="btnAddDatabase" type="button">+ Add</button> <button class="btn btn-sm btn-danger" id="btnDeleteDatabase" type="button">Delete</button>';
+  menu.appendChild(controls);
+  const selectedNames = state.databases.filter(d => state.selectedDatabaseIds.includes(d.id)).map(d => d.name);
+  summary.textContent = selectedNames.length ? `Database: ${selectedNames.join(', ')}` : 'Database: None';
+
+  menu.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', async () => {
+    state.selectedDatabaseIds = [...menu.querySelectorAll('input[type="checkbox"]:checked')].map(i => i.value);
+    renderDatabaseMenu();
+    await loadSubs();
+  }));
+  document.getElementById('btnAddDatabase')?.addEventListener('click', () => openDatabaseModal('add'));
+  document.getElementById('btnDeleteDatabase')?.addEventListener('click', () => openDatabaseModal('delete'));
+}
 // ── Tabs ───────────────────────────────────────────────────
 function setupTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
@@ -180,6 +219,20 @@ function resetAllFilters() {
 
 // ── Filters & Sort ─────────────────────────────────────────
 function setupFilters() {
+  const databaseFilter = document.getElementById('databaseSelector');
+  if (databaseFilter) {
+    let closeTimer = null;
+    const scheduleClose = () => {
+      if (closeTimer) clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => {
+        if (!databaseFilter.matches(':hover')) databaseFilter.open = false;
+      }, 120);
+    };
+    const cancelClose = () => closeTimer && clearTimeout(closeTimer);
+    databaseFilter.addEventListener('mouseenter', cancelClose);
+    databaseFilter.addEventListener('mouseleave', scheduleClose);
+  }
+
   const divisionFilter = document.getElementById('globalDivisionFilter');
   if (divisionFilter) {
     let closeTimer = null;
@@ -261,6 +314,11 @@ function setupFilters() {
     sortDirBtn.textContent = state.sort.dir === 1 ? '↑' : '↓';
     renderList();
   });
+
+  document.getElementById('onlyUngeocoded')?.addEventListener('change', (e) => {
+    state.filter.onlyUngeocoded = !!e.target.checked;
+    renderList();
+  });
 }
 
 // ── Filter Subs ────────────────────────────────────────────
@@ -286,6 +344,9 @@ function getFilteredSubs() {
   if (state.filter.notesSearch) {
     const notesQuery = state.filter.notesSearch;
     list = list.filter((s) => (s.notes || '').toLowerCase().includes(notesQuery));
+  }
+  if (state.filter.onlyUngeocoded) {
+    list = list.filter((s) => !(Number.isFinite(s.lat) && Number.isFinite(s.lng)));
   }
 
   // Sort
@@ -614,6 +675,7 @@ function setupBatchModal() {
   document.getElementById('btnBatchAddSubs').addEventListener('click', () => {
     modal.classList.remove('hidden');
     if (!state.batchCards.length) addBatchCard();
+  document.getElementById('batchImportFile')?.addEventListener('change', handleBatchImportFile);
   });
   document.getElementById('batchModalClose').addEventListener('click', closeBatchModal);
   modal.querySelector('.modal-backdrop').addEventListener('click', closeBatchModal);
@@ -1284,6 +1346,66 @@ function buildSheetName(division) {
   return raw.replace(/[\\/?*[\]:]/g, '').slice(0, 31);
 }
 
+
+function setupDatabaseModal() {
+  const modal = document.getElementById('databaseModal');
+  if (!modal) return;
+  modal.querySelector('.modal-backdrop').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalClose').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalCancel').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalSave').addEventListener('click', saveDatabaseModal);
+}
+
+function openDatabaseModal(mode) {
+  state.databaseModalMode = mode;
+  document.getElementById('databaseModalTitle').textContent = mode === 'add' ? 'Add Database' : 'Delete Database';
+  document.getElementById('databaseModalAddFields').classList.toggle('hidden', mode !== 'add');
+  document.getElementById('databaseModalDeleteFields').classList.toggle('hidden', mode !== 'delete');
+  if (mode === 'delete') {
+    const select = document.getElementById('fDatabaseDelete');
+    const deletable = state.databases.filter((d) => d.id !== 'subcontractors');
+    select.innerHTML = deletable.map((d) => `<option value="${escAttr(d.id)}">${escHtml(d.name)}</option>`).join('');
+  }
+  document.getElementById('databaseModal').classList.remove('hidden');
+}
+
+function closeDatabaseModal() { document.getElementById('databaseModal').classList.add('hidden'); }
+
+async function saveDatabaseModal() {
+  if (state.databaseModalMode === 'add') {
+    const name = document.getElementById('fDatabaseName').value.trim();
+    if (!name) return;
+    await api('POST', '/api/databases', { name });
+  } else {
+    const id = document.getElementById('fDatabaseDelete').value;
+    if (!id) return;
+    const ok = await openConfirmPromise(`Delete database "${id}"? This will remove the .db file.`);
+    if (!ok) return;
+    await api('DELETE', `/api/databases/${encodeURIComponent(id)}`);
+  }
+  closeDatabaseModal();
+  await loadDatabases();
+}
+
+function openConfirmPromise(message) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirmModal');
+    const msg = document.getElementById('confirmMsg');
+    const del = document.getElementById('confirmDelete');
+    const cancel = document.getElementById('confirmCancel');
+    msg.textContent = message;
+    const onCancel = () => { cleanup(); resolve(false); };
+    const onDelete = () => { cleanup(); resolve(true); };
+    function cleanup() {
+      del.removeEventListener('click', onDelete);
+      cancel.removeEventListener('click', onCancel);
+      modal.classList.add('hidden');
+    }
+    del.addEventListener('click', onDelete, { once: true });
+    cancel.addEventListener('click', onCancel, { once: true });
+    modal.classList.remove('hidden');
+  });
+}
 // ── Confirm Delete ─────────────────────────────────────────
 function setupConfirmModal() {
   document.getElementById('confirmCancel').addEventListener('click', () => {
@@ -2162,3 +2284,128 @@ function normalizeWebsite(rawWebsite) {
 
 // ── Boot ───────────────────────────────────────────────────
 init();
+
+
+async function handleBatchImportFile(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const rows = await parsePipelineFile(file);
+  state.importJobs = rows.map((r, i) => ({
+    id: `job-${Date.now()}-${i}`,
+    ...r,
+    status: 'queued',
+    subId: null,
+    db: state.selectedDatabaseIds[0] || 'subcontractors',
+    lat: '',
+    lng: '',
+  }));
+  renderImportJobs();
+  processImportQueue(rows);
+}
+
+async function parsePipelineFile(file) {
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+  return rows.slice(1).map((r) => ({
+    company_name: (r[0] || '').toString().trim(),
+    contact_name: `${(r[1] || '').toString().trim()} ${(r[2] || '').toString().trim()}`.trim(),
+    address: (r[3] || '').toString().trim(),
+    city: (r[4] || '').toString().trim(),
+    state: (r[5] || 'OH').toString().trim(),
+    zip: (r[6] || '').toString().trim(),
+    contact_phone: (r[7] || '').toString().trim(),
+    contact_email: (r[11] || '').toString().trim(),
+    labor_type: String(r[17] || '').toLowerCase().includes('non') ? 'non_union' : (String(r[17] || '').toLowerCase().includes('union') ? 'union' : 'unknown'),
+    division_nums: deriveDivisionNumsFromRow(r),
+  })).filter(r => r.company_name);
+}
+
+function deriveDivisionNumsFromRow(row) {
+  const codes = row.map((v) => String(v || '').trim()).filter((v) => /^\d{4,6}$/.test(v));
+  const divisionSet = new Set();
+  codes.forEach((code) => {
+    if (/^0+$/.test(code)) return;
+    const normalized = code.startsWith('00') ? code.slice(2) : code;
+    const division = normalized.slice(0, 2);
+    if (/^\d{2}$/.test(division) && division !== '00') divisionSet.add(division);
+  });
+  return [...divisionSet];
+}
+
+async function processImportQueue(rows) {
+  for (let i=0;i<rows.length;i++) {
+    const row=rows[i]; const job=state.importJobs[i];
+    try {
+      job.status='importing'; renderImportJobs();
+      const saved = await api('POST','/api/subcontractors',{...row, division_nums: row.division_nums?.length ? row.division_nums : [state.divisions[0]?.num || '01'], database_ids: [state.selectedDatabaseIds[0]], skip_geocode: true});
+      job.subId=saved._id; job.db = saved._db || job.db; job.status='geocoding'; renderImportJobs();
+      const geo = await api('POST',`/api/subcontractors/${saved._id}/geocode`, { _db: job.db });
+      job.lat = geo.lat || '';
+      job.lng = geo.lng || '';
+      job.status='complete';
+    } catch (err) {
+      job.status='failed';
+      job.error = err.message;
+    }
+    renderImportJobs();
+  }
+  await loadSubs();
+}
+
+function renderImportJobs() {
+  const el = document.getElementById('batchImportStatus');
+  if (!el) return;
+  if (!state.importJobs.length) { el.classList.add('hidden'); el.innerHTML=''; return; }
+  el.classList.remove('hidden');
+  const header = `<div class="import-job-row"><div class="cell"><strong>Company</strong></div><div class="cell"><strong>Contact</strong></div><div class="cell"><strong>Address</strong></div><div class="cell"><strong>Phone</strong></div><div class="cell"><strong>Email</strong></div><div class="cell"><strong>Divisions</strong></div><div class="cell"><strong>Status</strong></div><div class="cell"><strong>Coords / Save</strong></div></div>`;
+  const rowsHtml = state.importJobs.map((j) => `
+    <div class="import-job-row ${j.status==='complete'?'is-complete':''}">
+      <div class="cell"><strong>${escHtml(j.company_name || '')}</strong></div>
+      <div class="cell">${escHtml(j.contact_name || '')}</div>
+      <div class="cell">${escHtml([j.address, j.city, j.state, j.zip].filter(Boolean).join(', '))}</div>
+      <div class="cell">${escHtml(j.contact_phone || '')}</div>
+      <div class="cell">${escHtml(j.contact_email || '')}</div>
+      <div class="cell">
+        <input data-divisions="${j.id}" placeholder="e.g. 03A, 26" value="${escAttr((j.division_nums || []).join(', '))}" />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">${escHtml(j.labor_type || 'unknown')}</div>
+      </div>
+      <div class="cell">${escHtml(j.status)}${j.error ? `: ${escHtml(j.error)}` : ''}</div>
+      <div class="coords">
+        <input data-coords="${j.id}" placeholder="lat, lng" value="${escAttr((j.lat && j.lng) ? `${j.lat}, ${j.lng}` : '')}" />
+        <button class="btn btn-ghost btn-sm" data-save-coords="${j.id}" ${j.subId ? '' : 'disabled'}>Save Row</button>
+      </div>
+    </div>`).join('');
+  el.innerHTML = header + rowsHtml;
+  el.querySelectorAll('[data-save-coords]').forEach((btn) => btn.addEventListener('click', async () => {
+    const jobId = btn.dataset.saveCoords;
+    const job = state.importJobs.find((x) => x.id === jobId);
+    if (!job?.subId) return;
+    const divisionsRaw = (el.querySelector(`[data-divisions="${jobId}"]`)?.value || '').trim();
+    const editedDivisions = divisionsRaw
+      .split(',')
+      .map((d) => d.trim().toUpperCase())
+      .filter(Boolean);
+    if (editedDivisions.length) {
+      job.division_nums = [...new Set(editedDivisions)];
+    }
+    const coordsRaw = (el.querySelector(`[data-coords="${jobId}"]`)?.value || '').trim();
+    const [lat, lng] = parseLatLng(coordsRaw);
+    const payload = {
+      _db: job.db,
+      division_nums: job.division_nums?.length ? job.division_nums : [state.divisions[0]?.num || '01'],
+      division_num: (job.division_nums?.[0] || state.divisions[0]?.num || '01'),
+    };
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      payload.lat = lat;
+      payload.lng = lng;
+      job.lat = lat;
+      job.lng = lng;
+    }
+    await api('PUT', `/api/subcontractors/${job.subId}`, payload);
+    job.status = 'complete';
+    renderImportJobs();
+    await loadSubs();
+  }));
+}
