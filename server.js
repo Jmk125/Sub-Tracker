@@ -34,6 +34,9 @@ if (!fs.existsSync('./data')) fs.mkdirSync('./data');
 
 // Initialize database
 const db = new Datastore({ filename: './data/subcontractors.db', autoload: true });
+const DB_META_PATH = path.join(__dirname, 'data', 'databases.json');
+function loadDatabaseMeta(){ if(!fs.existsSync(DB_META_PATH)){ const init=[{id:'default',name:'Default',active:true}]; fs.writeFileSync(DB_META_PATH, JSON.stringify(init,null,2)); return init;} try{return JSON.parse(fs.readFileSync(DB_META_PATH,'utf8'));}catch{return [{id:'default',name:'Default',active:true}]}}
+function saveDatabaseMeta(d){ fs.writeFileSync(DB_META_PATH, JSON.stringify(d,null,2)); }
 
 // CSI MasterFormat Divisions
 const CSI_DIVISIONS = [
@@ -136,6 +139,10 @@ async function geocodeAddress(fullAddress) {
   };
 }
 
+
+app.get('/api/databases', (req,res)=>{ res.json(loadDatabaseMeta()); });
+app.post('/api/databases', (req,res)=>{ const name=String(req.body?.name||'').trim(); if(!name) return res.status(400).json({error:'Name required'}); const list=loadDatabaseMeta(); const id=name.toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-'+Date.now().toString(36); list.push({id,name,active:true}); saveDatabaseMeta(list); res.json({id,name,active:true}); });
+app.delete('/api/databases/:id', (req,res)=>{ const id=req.params.id; let list=loadDatabaseMeta(); if(id==='default') return res.status(400).json({error:'Cannot delete default database'}); list=list.filter(d=>d.id!==id); saveDatabaseMeta(list); db.remove({ database_ids: id }, { multi: true }, ()=>res.json({success:true})); });
 // ─── API: Get all divisions ───────────────────────────────────────────────────
 app.get('/api/divisions', (req, res) => {
   res.json(CSI_DIVISIONS);
@@ -233,10 +240,9 @@ Valid CSI division codes for this app:
 
 // ─── API: Get all subcontractors ─────────────────────────────────────────────
 app.get('/api/subcontractors', (req, res) => {
-  const { division } = req.query;
-  const query = division && division !== 'all'
-    ? { $or: [{ division_num: division }, { division_nums: division }] }
-    : {};
+  const { division, database_ids } = req.query;
+  const query = division && division !== 'all' ? { $or: [{ division_num: division }, { division_nums: division }] } : {};
+  if (database_ids) { const ids = String(database_ids).split(',').map(s=>s.trim()).filter(Boolean); if (ids.length) query.database_ids = { $in: ids }; }
   db.find(query).sort({ company_name: 1 }).exec((err, docs) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(docs.map((doc) => ({
@@ -248,7 +254,7 @@ app.get('/api/subcontractors', (req, res) => {
 
 // ─── API: Add subcontractor ──────────────────────────────────────────────────
 app.post('/api/subcontractors', async (req, res) => {
-  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, contact2_name, contact2_phone, contact2_email, labor_type, notes } = req.body;
+  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, contact2_name, contact2_phone, contact2_email, labor_type, notes, database_ids, skip_geocode } = req.body;
   const normalizedDivisionNums = [...new Set((Array.isArray(division_nums) ? division_nums : [division_num]).filter(Boolean))];
   const primaryDivisionNum = normalizedDivisionNums[0];
 
@@ -259,7 +265,7 @@ app.post('/api/subcontractors', async (req, res) => {
   // Geocode the address
   let lat = null, lng = null, county = '';
   const fullAddress = [address, city, state || 'OH', zip].filter(Boolean).join(', ');
-  if (fullAddress.trim()) {
+  if (!skip_geocode && fullAddress.trim()) {
     try {
       const geo = await geocodeAddress(fullAddress);
       lat = geo.lat;
@@ -297,6 +303,7 @@ app.post('/api/subcontractors', async (req, res) => {
     lat,
     lng,
     county,
+    database_ids: Array.isArray(database_ids) && database_ids.length ? database_ids : ['default'],
     created_at: new Date().toISOString()
   };
 

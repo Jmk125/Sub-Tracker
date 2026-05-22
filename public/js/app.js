@@ -30,6 +30,9 @@ const state = {
   manualCoordsResolve: null,
   exportColumns: [],
   batchCards: [],
+  databases: [],
+  selectedDatabaseIds: [],
+  importJobs: [],
 };
 
 // Division color palette (for map pins)
@@ -92,6 +95,7 @@ async function init() {
   setupExportModal();
   setupRecentProjectAddressUi();
   setupBatchModal();
+  await loadDatabases();
 }
 
 // ── API ────────────────────────────────────────────────────
@@ -134,13 +138,58 @@ async function loadDivisions() {
 }
 
 async function loadSubs() {
-  state.subs = await api('GET', '/api/subcontractors');
+  const qs = state.selectedDatabaseIds.length ? `?database_ids=${encodeURIComponent(state.selectedDatabaseIds.join(','))}` : '';
+  state.subs = await api('GET', `/api/subcontractors${qs}`);
   renderList();
   renderDataTab();
   if (state.mapReady) renderPins();
   updateBadge();
 }
 
+
+async function loadDatabases() {
+  state.databases = await api('GET', '/api/databases');
+  if (!state.selectedDatabaseIds.length) state.selectedDatabaseIds = state.databases.filter(d => d.active !== false).map(d => d.id);
+  renderDatabaseMenu();
+  await loadSubs();
+}
+
+function renderDatabaseMenu() {
+  const menu = document.getElementById('databaseSelectorMenu');
+  const summary = document.getElementById('databaseSelectorSummary');
+  if (!menu || !summary) return;
+  menu.innerHTML = '';
+  state.databases.forEach((db) => {
+    const row = document.createElement('label');
+    row.className = 'division-filter-item';
+    row.innerHTML = `<input type="checkbox" value="${escAttr(db.id)}" ${state.selectedDatabaseIds.includes(db.id) ? 'checked' : ''}/> ${escHtml(db.name)}`;
+    menu.appendChild(row);
+  });
+  const controls = document.createElement('div');
+  controls.innerHTML = '<button class="btn btn-sm btn-primary" id="btnAddDatabase" type="button">+ Add</button> <button class="btn btn-sm btn-danger" id="btnDeleteDatabase" type="button">Delete</button>';
+  menu.appendChild(controls);
+  const selectedNames = state.databases.filter(d => state.selectedDatabaseIds.includes(d.id)).map(d => d.name);
+  summary.textContent = selectedNames.length ? `Database: ${selectedNames.join(', ')}` : 'Database: None';
+
+  menu.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', async () => {
+    state.selectedDatabaseIds = [...menu.querySelectorAll('input[type="checkbox"]:checked')].map(i => i.value);
+    renderDatabaseMenu();
+    await loadSubs();
+  }));
+  document.getElementById('btnAddDatabase')?.addEventListener('click', async () => {
+    const name = window.prompt('New database name');
+    if (!name) return;
+    await api('POST', '/api/databases', { name });
+    await loadDatabases();
+  });
+  document.getElementById('btnDeleteDatabase')?.addEventListener('click', async () => {
+    const id = window.prompt('Enter database ID to delete');
+    if (!id) return;
+    if (!window.confirm('Delete this database? This removes associated subcontractors.')) return;
+    await api('DELETE', `/api/databases/${encodeURIComponent(id)}`);
+    await loadDatabases();
+  });
+}
 // ── Tabs ───────────────────────────────────────────────────
 function setupTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
@@ -614,6 +663,7 @@ function setupBatchModal() {
   document.getElementById('btnBatchAddSubs').addEventListener('click', () => {
     modal.classList.remove('hidden');
     if (!state.batchCards.length) addBatchCard();
+  document.getElementById('batchImportFile')?.addEventListener('change', handleBatchImportFile);
   });
   document.getElementById('batchModalClose').addEventListener('click', closeBatchModal);
   modal.querySelector('.modal-backdrop').addEventListener('click', closeBatchModal);
@@ -2162,3 +2212,57 @@ function normalizeWebsite(rawWebsite) {
 
 // ── Boot ───────────────────────────────────────────────────
 init();
+
+
+async function handleBatchImportFile(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const rows = await parsePipelineFile(file);
+  state.importJobs = rows.map((r, i) => ({ id: `job-${Date.now()}-${i}`, company_name: r.company_name, status: 'queued', subId: null }));
+  renderImportJobs();
+  processImportQueue(rows);
+}
+
+async function parsePipelineFile(file) {
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+  return rows.slice(1).map((r) => ({
+    company_name: (r[0] || '').toString().trim(),
+    contact_name: `${(r[1] || '').toString().trim()} ${(r[2] || '').toString().trim()}`.trim(),
+    address: (r[3] || '').toString().trim(),
+    city: (r[4] || '').toString().trim(),
+    state: (r[5] || 'OH').toString().trim(),
+    zip: (r[6] || '').toString().trim(),
+    contact_phone: (r[7] || '').toString().trim(),
+    contact_email: (r[11] || '').toString().trim(),
+    labor_type: String(r[17] || '').toLowerCase().includes('non') ? 'non_union' : (String(r[17] || '').toLowerCase().includes('union') ? 'union' : 'unknown'),
+  })).filter(r => r.company_name);
+}
+
+async function processImportQueue(rows) {
+  for (let i=0;i<rows.length;i++) {
+    const row=rows[i]; const job=state.importJobs[i];
+    try {
+      job.status='importing'; renderImportJobs();
+      const saved = await api('POST','/api/subcontractors',{...row, division_nums:[state.divisions[0]?.num || '01'], database_ids: state.selectedDatabaseIds, skip_geocode: true});
+      job.subId=saved._id; job.status='geocoding'; renderImportJobs();
+      await api('POST',`/api/subcontractors/${saved._id}/geocode`);
+      job.status='complete';
+    } catch (err) {
+      job.status=`failed: ${err.message}`;
+    }
+    renderImportJobs();
+  }
+  await loadSubs();
+}
+
+function renderImportJobs() {
+  const el = document.getElementById('batchImportStatus');
+  if (!el) return;
+  if (!state.importJobs.length) { el.classList.add('hidden'); el.innerHTML=''; return; }
+  el.classList.remove('hidden');
+  el.innerHTML = state.importJobs.map((j) => `<div class="import-job-row ${j.status==='complete'?'is-complete':''}"><strong>${escHtml(j.company_name)}</strong> — ${escHtml(j.status)} ${j.status.startsWith('failed')&&j.subId?`<button data-manual-coords="${j.subId}" class="btn btn-ghost btn-sm">Set Coords</button>`:''}</div>`).join('');
+  el.querySelectorAll('[data-manual-coords]').forEach((b)=>b.addEventListener('click',()=>openManualCoordsModal(b.dataset.manualCoords,{reason:'Paste coordinates for failed geocode'})));
+}
