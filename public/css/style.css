@@ -1255,3 +1255,5 @@ select {
 .batch-import-status{margin:10px 0;padding:8px;border:1px solid var(--border);border-radius:8px;max-height:220px;overflow:auto}
 .import-job-row{padding:6px 8px;border-bottom:1px solid var(--border-soft)}
 .import-job-row.is-complete{opacity:.5}
+
+#fDatabaseName,#fDatabaseDelete{width:100%;margin-top:6px;padding:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:var(--radius)}

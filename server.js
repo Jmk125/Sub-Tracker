@@ -33,10 +33,40 @@ const HTTPS_PORT = parseInt(process.env.HTTPS_PORT || '3443', 10);
 if (!fs.existsSync('./data')) fs.mkdirSync('./data');
 
 // Initialize database
-const db = new Datastore({ filename: './data/subcontractors.db', autoload: true });
-const DB_META_PATH = path.join(__dirname, 'data', 'databases.json');
-function loadDatabaseMeta(){ if(!fs.existsSync(DB_META_PATH)){ const init=[{id:'default',name:'Default',active:true}]; fs.writeFileSync(DB_META_PATH, JSON.stringify(init,null,2)); return init;} try{return JSON.parse(fs.readFileSync(DB_META_PATH,'utf8'));}catch{return [{id:'default',name:'Default',active:true}]}}
-function saveDatabaseMeta(d){ fs.writeFileSync(DB_META_PATH, JSON.stringify(d,null,2)); }
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const dbRegistry = new Map();
+
+function sanitizeDatabaseName(name) {
+  return String(name || '').trim().replace(/\.db$/i, '').replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_');
+}
+
+function dbNameFromFile(file) { return file.replace(/\.db$/i, ''); }
+function dbFileFromName(name) { return `${name}.db`; }
+
+function listDatabaseNames() {
+  const files = fs.readdirSync(DATA_DIR).filter((f) => f.toLowerCase().endsWith('.db')).sort((a,b)=>a.localeCompare(b));
+  if (!files.includes('subcontractors.db')) files.unshift('subcontractors.db');
+  return [...new Set(files)].map(dbNameFromFile);
+}
+
+function getDatabaseHandle(dbName) {
+  const safe = sanitizeDatabaseName(dbName) || 'subcontractors';
+  if (dbRegistry.has(safe)) return dbRegistry.get(safe);
+  const db = new Datastore({ filename: path.join(DATA_DIR, dbFileFromName(safe)), autoload: true });
+  dbRegistry.set(safe, db);
+  return db;
+}
+
+function getSelectedDbNames(input) {
+  const all = listDatabaseNames();
+  const parsed = String(input || '').split(',').map((s)=>sanitizeDatabaseName(s)).filter(Boolean);
+  const valid = parsed.filter((n)=>all.includes(n));
+  return valid.length ? valid : ['subcontractors'];
+}
+
+const db = getDatabaseHandle('subcontractors');
 
 // CSI MasterFormat Divisions
 const CSI_DIVISIONS = [
@@ -140,9 +170,27 @@ async function geocodeAddress(fullAddress) {
 }
 
 
-app.get('/api/databases', (req,res)=>{ res.json(loadDatabaseMeta()); });
-app.post('/api/databases', (req,res)=>{ const name=String(req.body?.name||'').trim(); if(!name) return res.status(400).json({error:'Name required'}); const list=loadDatabaseMeta(); const id=name.toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-'+Date.now().toString(36); list.push({id,name,active:true}); saveDatabaseMeta(list); res.json({id,name,active:true}); });
-app.delete('/api/databases/:id', (req,res)=>{ const id=req.params.id; let list=loadDatabaseMeta(); if(id==='default') return res.status(400).json({error:'Cannot delete default database'}); list=list.filter(d=>d.id!==id); saveDatabaseMeta(list); db.remove({ database_ids: id }, { multi: true }, ()=>res.json({success:true})); });
+app.get('/api/databases', (req,res)=>{
+  const names = listDatabaseNames();
+  res.json(names.map((name)=>({ id:name, name })));
+});
+app.post('/api/databases', (req,res)=>{
+  const safeName = sanitizeDatabaseName(req.body?.name);
+  if (!safeName) return res.status(400).json({ error:'Name required' });
+  const existing = listDatabaseNames();
+  if (existing.includes(safeName)) return res.status(400).json({ error:'Database already exists' });
+  getDatabaseHandle(safeName);
+  res.json({ id:safeName, name:safeName });
+});
+app.delete('/api/databases/:id', (req,res)=>{
+  const safeName = sanitizeDatabaseName(req.params.id);
+  if (!safeName || safeName === 'subcontractors') return res.status(400).json({ error:'Cannot delete subcontractors database' });
+  const filePath = path.join(DATA_DIR, dbFileFromName(safeName));
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error:'Database not found' });
+  dbRegistry.delete(safeName);
+  fs.unlinkSync(filePath);
+  res.json({ success:true });
+});
 // ─── API: Get all divisions ───────────────────────────────────────────────────
 app.get('/api/divisions', (req, res) => {
   res.json(CSI_DIVISIONS);
@@ -242,14 +290,17 @@ Valid CSI division codes for this app:
 app.get('/api/subcontractors', (req, res) => {
   const { division, database_ids } = req.query;
   const query = division && division !== 'all' ? { $or: [{ division_num: division }, { division_nums: division }] } : {};
-  if (database_ids) { const ids = String(database_ids).split(',').map(s=>s.trim()).filter(Boolean); if (ids.length) query.database_ids = { $in: ids }; }
-  db.find(query).sort({ company_name: 1 }).exec((err, docs) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(docs.map((doc) => ({
-      ...doc,
-      labor_type: ['union', 'non_union'].includes(doc.labor_type) ? doc.labor_type : 'unknown',
-    })));
-  });
+  const selected = getSelectedDbNames(database_ids);
+  const tasks = selected.map((name) => new Promise((resolve, reject) => {
+    getDatabaseHandle(name).find(query).sort({ company_name: 1 }).exec((err, docs) => {
+      if (err) return reject(err);
+      resolve((docs || []).map((doc) => ({ ...doc, _db: name })));
+    });
+  }));
+  Promise.all(tasks).then((groups) => {
+    const merged = groups.flat().sort((a,b)=>String(a.company_name||'').localeCompare(String(b.company_name||'')));
+    res.json(merged.map((doc) => ({ ...doc, labor_type: ['union', 'non_union'].includes(doc.labor_type) ? doc.labor_type : 'unknown' })));
+  }).catch((err)=>res.status(500).json({ error: err.message }));
 });
 
 // ─── API: Add subcontractor ──────────────────────────────────────────────────
@@ -307,7 +358,8 @@ app.post('/api/subcontractors', async (req, res) => {
     created_at: new Date().toISOString()
   };
 
-  db.insert(doc, (err, newDoc) => {
+  const targetDb = getDatabaseHandle(Array.isArray(database_ids) && database_ids.length ? database_ids[0] : 'subcontractors');
+  targetDb.insert(doc, (err, newDoc) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(newDoc);
   });
@@ -315,6 +367,8 @@ app.post('/api/subcontractors', async (req, res) => {
 
 // ─── API: Update subcontractor ───────────────────────────────────────────────
 app.put('/api/subcontractors/:id', async (req, res) => {
+  const dbName = sanitizeDatabaseName(req.body?._db || req.query?._db || 'subcontractors');
+  const targetDb = getDatabaseHandle(dbName);
   const { id } = req.params;
   const updates = req.body;
   if (Object.prototype.hasOwnProperty.call(updates, 'labor_type')) {
@@ -351,9 +405,9 @@ app.put('/api/subcontractors/:id', async (req, res) => {
     if (divInfo) updates.division_name = divInfo.name;
   }
 
-  db.update({ _id: id }, { $set: updates }, {}, (err, numReplaced) => {
+  targetDb.update({ _id: id }, { $set: updates }, {}, (err, numReplaced) => {
     if (err) return res.status(500).json({ error: err.message });
-    db.findOne({ _id: id }, (err2, doc) => {
+    targetDb.findOne({ _id: id }, (err2, doc) => {
       res.json(doc);
     });
   });
@@ -361,7 +415,9 @@ app.put('/api/subcontractors/:id', async (req, res) => {
 
 // ─── API: Delete subcontractor ───────────────────────────────────────────────
 app.delete('/api/subcontractors/:id', (req, res) => {
-  db.remove({ _id: req.params.id }, {}, (err, numRemoved) => {
+  const dbName = sanitizeDatabaseName(req.query?._db || 'subcontractors');
+  const targetDb = getDatabaseHandle(dbName);
+  targetDb.remove({ _id: req.params.id }, {}, (err, numRemoved) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ success: true, removed: numRemoved });
   });
@@ -369,13 +425,15 @@ app.delete('/api/subcontractors/:id', (req, res) => {
 
 // ─── API: Re-geocode a specific sub ──────────────────────────────────────────
 app.post('/api/subcontractors/:id/geocode', async (req, res) => {
-  db.findOne({ _id: req.params.id }, async (err, doc) => {
+  const dbName = sanitizeDatabaseName(req.body?._db || req.query?._db || 'subcontractors');
+  const targetDb = getDatabaseHandle(dbName);
+  targetDb.findOne({ _id: req.params.id }, async (err, doc) => {
     if (err || !doc) return res.status(404).json({ error: 'Not found' });
     const fullAddress = [doc.address, doc.city, doc.state || 'OH', doc.zip].filter(Boolean).join(', ');
     try {
       const geo = await geocodeAddress(fullAddress);
       if (Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
-        db.update({ _id: req.params.id }, { $set: { lat: geo.lat, lng: geo.lng, county: geo.county || '' } }, {}, () => {
+        targetDb.update({ _id: req.params.id }, { $set: { lat: geo.lat, lng: geo.lng, county: geo.county || '' } }, {}, () => {
           res.json({ lat: geo.lat, lng: geo.lng, county: geo.county || '' });
         });
       } else {

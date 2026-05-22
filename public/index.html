@@ -296,6 +296,32 @@
   </div>
 
   <!-- Delete confirm -->
+
+  <div id="databaseModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box modal-sm">
+      <div class="modal-header">
+        <h2 id="databaseModalTitle">Add Database</h2>
+        <button class="modal-close" id="databaseModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="databaseModalAddFields">
+          <label for="fDatabaseName">Database Name</label>
+          <input type="text" id="fDatabaseName" placeholder="e.g. Cincinnati Subs" />
+        </div>
+        <div id="databaseModalDeleteFields" class="hidden">
+          <label for="fDatabaseDelete">Select Database</label>
+          <select id="fDatabaseDelete"></select>
+          <p class="manual-coords-copy">Deleting removes the .db file and all subcontractors in it.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="databaseModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="databaseModalSave">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div id="confirmModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-box modal-sm">

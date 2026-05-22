@@ -95,6 +95,7 @@ async function init() {
   setupExportModal();
   setupRecentProjectAddressUi();
   setupBatchModal();
+  setupDatabaseModal();
   await loadDatabases();
 }
 
@@ -176,19 +177,8 @@ function renderDatabaseMenu() {
     renderDatabaseMenu();
     await loadSubs();
   }));
-  document.getElementById('btnAddDatabase')?.addEventListener('click', async () => {
-    const name = window.prompt('New database name');
-    if (!name) return;
-    await api('POST', '/api/databases', { name });
-    await loadDatabases();
-  });
-  document.getElementById('btnDeleteDatabase')?.addEventListener('click', async () => {
-    const id = window.prompt('Enter database ID to delete');
-    if (!id) return;
-    if (!window.confirm('Delete this database? This removes associated subcontractors.')) return;
-    await api('DELETE', `/api/databases/${encodeURIComponent(id)}`);
-    await loadDatabases();
-  });
+  document.getElementById('btnAddDatabase')?.addEventListener('click', () => openDatabaseModal('add'));
+  document.getElementById('btnDeleteDatabase')?.addEventListener('click', () => openDatabaseModal('delete'));
 }
 // ── Tabs ───────────────────────────────────────────────────
 function setupTabs() {
@@ -1334,6 +1324,66 @@ function buildSheetName(division) {
   return raw.replace(/[\\/?*[\]:]/g, '').slice(0, 31);
 }
 
+
+function setupDatabaseModal() {
+  const modal = document.getElementById('databaseModal');
+  if (!modal) return;
+  modal.querySelector('.modal-backdrop').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalClose').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalCancel').addEventListener('click', closeDatabaseModal);
+  document.getElementById('databaseModalSave').addEventListener('click', saveDatabaseModal);
+}
+
+function openDatabaseModal(mode) {
+  state.databaseModalMode = mode;
+  document.getElementById('databaseModalTitle').textContent = mode === 'add' ? 'Add Database' : 'Delete Database';
+  document.getElementById('databaseModalAddFields').classList.toggle('hidden', mode !== 'add');
+  document.getElementById('databaseModalDeleteFields').classList.toggle('hidden', mode !== 'delete');
+  if (mode === 'delete') {
+    const select = document.getElementById('fDatabaseDelete');
+    const deletable = state.databases.filter((d) => d.id !== 'subcontractors');
+    select.innerHTML = deletable.map((d) => `<option value="${escAttr(d.id)}">${escHtml(d.name)}</option>`).join('');
+  }
+  document.getElementById('databaseModal').classList.remove('hidden');
+}
+
+function closeDatabaseModal() { document.getElementById('databaseModal').classList.add('hidden'); }
+
+async function saveDatabaseModal() {
+  if (state.databaseModalMode === 'add') {
+    const name = document.getElementById('fDatabaseName').value.trim();
+    if (!name) return;
+    await api('POST', '/api/databases', { name });
+  } else {
+    const id = document.getElementById('fDatabaseDelete').value;
+    if (!id) return;
+    const ok = await openConfirmPromise(`Delete database "${id}"? This will remove the .db file.`);
+    if (!ok) return;
+    await api('DELETE', `/api/databases/${encodeURIComponent(id)}`);
+  }
+  closeDatabaseModal();
+  await loadDatabases();
+}
+
+function openConfirmPromise(message) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirmModal');
+    const msg = document.getElementById('confirmMsg');
+    const del = document.getElementById('confirmDelete');
+    const cancel = document.getElementById('confirmCancel');
+    msg.textContent = message;
+    const onCancel = () => { cleanup(); resolve(false); };
+    const onDelete = () => { cleanup(); resolve(true); };
+    function cleanup() {
+      del.removeEventListener('click', onDelete);
+      cancel.removeEventListener('click', onCancel);
+      modal.classList.add('hidden');
+    }
+    del.addEventListener('click', onDelete, { once: true });
+    cancel.addEventListener('click', onCancel, { once: true });
+    modal.classList.remove('hidden');
+  });
+}
 // ── Confirm Delete ─────────────────────────────────────────
 function setupConfirmModal() {
   document.getElementById('confirmCancel').addEventListener('click', () => {
