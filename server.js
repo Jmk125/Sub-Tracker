@@ -33,7 +33,40 @@ const HTTPS_PORT = parseInt(process.env.HTTPS_PORT || '3443', 10);
 if (!fs.existsSync('./data')) fs.mkdirSync('./data');
 
 // Initialize database
-const db = new Datastore({ filename: './data/subcontractors.db', autoload: true });
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const dbRegistry = new Map();
+
+function sanitizeDatabaseName(name) {
+  return String(name || '').trim().replace(/\.db$/i, '').replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_');
+}
+
+function dbNameFromFile(file) { return file.replace(/\.db$/i, ''); }
+function dbFileFromName(name) { return `${name}.db`; }
+
+function listDatabaseNames() {
+  const files = fs.readdirSync(DATA_DIR).filter((f) => f.toLowerCase().endsWith('.db')).sort((a,b)=>a.localeCompare(b));
+  return [...new Set(files)].map(dbNameFromFile);
+}
+
+function getDatabaseHandle(dbName) {
+  const safe = sanitizeDatabaseName(dbName) || 'subcontractors';
+  if (dbRegistry.has(safe)) return dbRegistry.get(safe);
+  const db = new Datastore({ filename: path.join(DATA_DIR, dbFileFromName(safe)), autoload: true });
+  dbRegistry.set(safe, db);
+  return db;
+}
+
+function getSelectedDbNames(input) {
+  const all = listDatabaseNames();
+  const raw = String(input || '').trim();
+  if (!raw) return all.includes('subcontractors') ? ['subcontractors'] : all;
+  const parsed = raw.split(',').map((s)=>sanitizeDatabaseName(s)).filter(Boolean);
+  const valid = parsed.filter((n)=>all.includes(n));
+  return valid;
+}
+
 
 // CSI MasterFormat Divisions
 const CSI_DIVISIONS = [
@@ -120,10 +153,46 @@ async function geocodeAddress(fullAddress) {
   }
 
   const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(fullAddress)}&limit=1&countrycodes=us`;
-  const geoRes = await fetch(geoUrl, {
-    headers: { 'User-Agent': 'SubTrackerApp/1.0 (construction-internal)' }
-  });
-  const geoData = await geoRes.json();
+  let geoData = null;
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    const geoRes = await fetch(geoUrl, {
+      headers: {
+        'User-Agent': 'SubTrackerApp/1.0 (construction-internal; contact=ops@local)',
+        'Accept': 'application/json',
+      }
+    });
+    lastStatus = geoRes.status;
+    const rawBody = await geoRes.text();
+    const retryAfterRaw = geoRes.headers.get('retry-after');
+    const retryAfterSeconds = Number.parseInt(String(retryAfterRaw || ''), 10);
+    const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds * 1000
+      : 8000;
+
+    try {
+      geoData = JSON.parse(rawBody);
+    } catch (err) {
+      if (geoRes.status === 429 || geoRes.status >= 500) {
+        await new Promise((r) => setTimeout(r, retryAfterMs));
+        continue;
+      }
+      throw new Error(`Geocoder returned non-JSON response (HTTP ${geoRes.status})`);
+    }
+    if (!geoRes.ok) {
+      if (geoRes.status === 429 || geoRes.status >= 500) {
+        await new Promise((r) => setTimeout(r, retryAfterMs));
+        continue;
+      }
+      const message = Array.isArray(geoData) ? '' : (geoData?.error || geoData?.message || '');
+      throw new Error(`Geocoder request failed (HTTP ${geoRes.status})${message ? `: ${message}` : ''}`);
+    }
+    break;
+  }
+  if (!geoData) {
+    throw new Error(`Geocoder unavailable after retries (last HTTP ${lastStatus || 'unknown'})`);
+  }
 
   if (!Array.isArray(geoData) || geoData.length === 0) {
     return { lat: null, lng: null, county: '' };
@@ -136,6 +205,28 @@ async function geocodeAddress(fullAddress) {
   };
 }
 
+
+app.get('/api/databases', (req,res)=>{
+  const names = listDatabaseNames();
+  res.json(names.map((name)=>({ id:name, name })));
+});
+app.post('/api/databases', (req,res)=>{
+  const safeName = sanitizeDatabaseName(req.body?.name);
+  if (!safeName) return res.status(400).json({ error:'Name required' });
+  const existing = listDatabaseNames();
+  if (existing.includes(safeName)) return res.status(400).json({ error:'Database already exists' });
+  getDatabaseHandle(safeName);
+  res.json({ id:safeName, name:safeName });
+});
+app.delete('/api/databases/:id', (req,res)=>{
+  const safeName = sanitizeDatabaseName(req.params.id);
+  if (!safeName || safeName === 'subcontractors') return res.status(400).json({ error:'Cannot delete subcontractors database' });
+  const filePath = path.join(DATA_DIR, dbFileFromName(safeName));
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error:'Database not found' });
+  dbRegistry.delete(safeName);
+  fs.unlinkSync(filePath);
+  res.json({ success:true });
+});
 // ─── API: Get all divisions ───────────────────────────────────────────────────
 app.get('/api/divisions', (req, res) => {
   res.json(CSI_DIVISIONS);
@@ -233,22 +324,25 @@ Valid CSI division codes for this app:
 
 // ─── API: Get all subcontractors ─────────────────────────────────────────────
 app.get('/api/subcontractors', (req, res) => {
-  const { division } = req.query;
-  const query = division && division !== 'all'
-    ? { $or: [{ division_num: division }, { division_nums: division }] }
-    : {};
-  db.find(query).sort({ company_name: 1 }).exec((err, docs) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(docs.map((doc) => ({
-      ...doc,
-      labor_type: ['union', 'non_union'].includes(doc.labor_type) ? doc.labor_type : 'unknown',
-    })));
-  });
+  const { division, database_ids } = req.query;
+  const query = division && division !== 'all' ? { $or: [{ division_num: division }, { division_nums: division }] } : {};
+  const selected = getSelectedDbNames(database_ids);
+  if (!selected.length) return res.json([]);
+  const tasks = selected.map((name) => new Promise((resolve, reject) => {
+    getDatabaseHandle(name).find(query).sort({ company_name: 1 }).exec((err, docs) => {
+      if (err) return reject(err);
+      resolve((docs || []).map((doc) => ({ ...doc, _db: name })));
+    });
+  }));
+  Promise.all(tasks).then((groups) => {
+    const merged = groups.flat().sort((a,b)=>String(a.company_name||'').localeCompare(String(b.company_name||'')));
+    res.json(merged.map((doc) => ({ ...doc, labor_type: ['union', 'non_union'].includes(doc.labor_type) ? doc.labor_type : 'unknown' })));
+  }).catch((err)=>res.status(500).json({ error: err.message }));
 });
 
 // ─── API: Add subcontractor ──────────────────────────────────────────────────
 app.post('/api/subcontractors', async (req, res) => {
-  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, contact2_name, contact2_phone, contact2_email, labor_type, notes } = req.body;
+  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, contact2_name, contact2_phone, contact2_email, labor_type, notes, database_ids, skip_geocode, lat: inputLat, lng: inputLng } = req.body;
   const normalizedDivisionNums = [...new Set((Array.isArray(division_nums) ? division_nums : [division_num]).filter(Boolean))];
   const primaryDivisionNum = normalizedDivisionNums[0];
 
@@ -257,9 +351,11 @@ app.post('/api/subcontractors', async (req, res) => {
   }
 
   // Geocode the address
-  let lat = null, lng = null, county = '';
+  let lat = Number.isFinite(Number(inputLat)) ? Number(inputLat) : null;
+  let lng = Number.isFinite(Number(inputLng)) ? Number(inputLng) : null;
+  let county = '';
   const fullAddress = [address, city, state || 'OH', zip].filter(Boolean).join(', ');
-  if (fullAddress.trim()) {
+  if ((lat === null || lng === null) && !skip_geocode && fullAddress.trim()) {
     try {
       const geo = await geocodeAddress(fullAddress);
       lat = geo.lat;
@@ -300,7 +396,8 @@ app.post('/api/subcontractors', async (req, res) => {
     created_at: new Date().toISOString()
   };
 
-  db.insert(doc, (err, newDoc) => {
+  const targetDb = getDatabaseHandle(Array.isArray(database_ids) && database_ids.length ? database_ids[0] : 'subcontractors');
+  targetDb.insert(doc, (err, newDoc) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(newDoc);
   });
@@ -308,6 +405,8 @@ app.post('/api/subcontractors', async (req, res) => {
 
 // ─── API: Update subcontractor ───────────────────────────────────────────────
 app.put('/api/subcontractors/:id', async (req, res) => {
+  const dbName = sanitizeDatabaseName(req.body?._db || req.query?._db || 'subcontractors');
+  const targetDb = getDatabaseHandle(dbName);
   const { id } = req.params;
   const updates = req.body;
   if (Object.prototype.hasOwnProperty.call(updates, 'labor_type')) {
@@ -344,9 +443,9 @@ app.put('/api/subcontractors/:id', async (req, res) => {
     if (divInfo) updates.division_name = divInfo.name;
   }
 
-  db.update({ _id: id }, { $set: updates }, {}, (err, numReplaced) => {
+  targetDb.update({ _id: id }, { $set: updates }, {}, (err, numReplaced) => {
     if (err) return res.status(500).json({ error: err.message });
-    db.findOne({ _id: id }, (err2, doc) => {
+    targetDb.findOne({ _id: id }, (err2, doc) => {
       res.json(doc);
     });
   });
@@ -354,7 +453,9 @@ app.put('/api/subcontractors/:id', async (req, res) => {
 
 // ─── API: Delete subcontractor ───────────────────────────────────────────────
 app.delete('/api/subcontractors/:id', (req, res) => {
-  db.remove({ _id: req.params.id }, {}, (err, numRemoved) => {
+  const dbName = sanitizeDatabaseName(req.query?._db || 'subcontractors');
+  const targetDb = getDatabaseHandle(dbName);
+  targetDb.remove({ _id: req.params.id }, {}, (err, numRemoved) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ success: true, removed: numRemoved });
   });
@@ -362,13 +463,15 @@ app.delete('/api/subcontractors/:id', (req, res) => {
 
 // ─── API: Re-geocode a specific sub ──────────────────────────────────────────
 app.post('/api/subcontractors/:id/geocode', async (req, res) => {
-  db.findOne({ _id: req.params.id }, async (err, doc) => {
+  const dbName = sanitizeDatabaseName(req.body?._db || req.query?._db || 'subcontractors');
+  const targetDb = getDatabaseHandle(dbName);
+  targetDb.findOne({ _id: req.params.id }, async (err, doc) => {
     if (err || !doc) return res.status(404).json({ error: 'Not found' });
     const fullAddress = [doc.address, doc.city, doc.state || 'OH', doc.zip].filter(Boolean).join(', ');
     try {
       const geo = await geocodeAddress(fullAddress);
       if (Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
-        db.update({ _id: req.params.id }, { $set: { lat: geo.lat, lng: geo.lng, county: geo.county || '' } }, {}, () => {
+        targetDb.update({ _id: req.params.id }, { $set: { lat: geo.lat, lng: geo.lng, county: geo.county || '' } }, {}, () => {
           res.json({ lat: geo.lat, lng: geo.lng, county: geo.county || '' });
         });
       } else {
