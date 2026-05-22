@@ -61,9 +61,11 @@ function getDatabaseHandle(dbName) {
 
 function getSelectedDbNames(input) {
   const all = listDatabaseNames();
-  const parsed = String(input || '').split(',').map((s)=>sanitizeDatabaseName(s)).filter(Boolean);
+  const raw = String(input || '').trim();
+  if (!raw) return all.includes('subcontractors') ? ['subcontractors'] : all;
+  const parsed = raw.split(',').map((s)=>sanitizeDatabaseName(s)).filter(Boolean);
   const valid = parsed.filter((n)=>all.includes(n));
-  return valid.length ? valid : ['subcontractors'];
+  return valid;
 }
 
 const db = getDatabaseHandle('subcontractors');
@@ -291,6 +293,7 @@ app.get('/api/subcontractors', (req, res) => {
   const { division, database_ids } = req.query;
   const query = division && division !== 'all' ? { $or: [{ division_num: division }, { division_nums: division }] } : {};
   const selected = getSelectedDbNames(database_ids);
+  if (!selected.length) return res.json([]);
   const tasks = selected.map((name) => new Promise((resolve, reject) => {
     getDatabaseHandle(name).find(query).sort({ company_name: 1 }).exec((err, docs) => {
       if (err) return reject(err);

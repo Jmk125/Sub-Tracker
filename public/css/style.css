@@ -1238,8 +1238,8 @@ select {
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-.batch-modal-box { width: min(1500px, 99vw); }
-.batch-modal-body { max-height: 82vh; overflow-y: auto; }
+.batch-modal-box { width: min(1800px, 99vw); max-height: 96vh; }
+.batch-modal-body { max-height: 90vh; overflow-y: auto; }
 .batch-toolbar { display:flex; gap:8px; margin: 10px 0 14px; }
 .batch-card-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
 .batch-card { border:1px solid var(--border2); background:var(--bg3); border-radius:var(--radius); padding:10px; display:flex; flex-direction:column; gap:8px; }
@@ -1251,9 +1251,12 @@ select {
 .batch-dropzone.active { border-color: var(--accent); color: var(--accent); }
 .batch-status { min-height: 18px; font-size: 12px; color: var(--text-dim); }
 .batch-save-disabled { opacity: 0.6; cursor: not-allowed; }
-.database-selector{margin-top:6px}
-.batch-import-status{margin:10px 0;padding:8px;border:1px solid var(--border);border-radius:8px;max-height:220px;overflow:auto}
-.import-job-row{padding:6px 8px;border-bottom:1px solid var(--border-soft)}
+.database-selector{margin-top:2px;font-size:12px}
+.batch-import-status{margin:10px 0;padding:8px;border:1px solid var(--border);border-radius:8px;max-height:55vh;overflow:auto}
+.import-job-row{padding:6px 8px;border-bottom:1px solid var(--border-soft);display:grid;grid-template-columns:2fr 1.2fr 1.6fr 1.2fr 1fr 1fr 1fr auto;gap:8px;align-items:center}
 .import-job-row.is-complete{opacity:.5}
+.import-job-row .cell{font-size:12px}
+.import-job-row .coords{display:flex;gap:6px;align-items:center}
+.import-job-row .coords input{width:96px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px}
 
 #fDatabaseName,#fDatabaseDelete{width:100%;margin-top:6px;padding:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:var(--radius)}

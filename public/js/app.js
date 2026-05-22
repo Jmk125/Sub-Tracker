@@ -2268,7 +2268,15 @@ async function handleBatchImportFile(e) {
   const file = e.target.files?.[0];
   if (!file) return;
   const rows = await parsePipelineFile(file);
-  state.importJobs = rows.map((r, i) => ({ id: `job-${Date.now()}-${i}`, company_name: r.company_name, status: 'queued', subId: null }));
+  state.importJobs = rows.map((r, i) => ({
+    id: `job-${Date.now()}-${i}`,
+    ...r,
+    status: 'queued',
+    subId: null,
+    db: state.selectedDatabaseIds[0] || 'subcontractors',
+    lat: '',
+    lng: '',
+  }));
   renderImportJobs();
   processImportQueue(rows);
 }
@@ -2297,11 +2305,14 @@ async function processImportQueue(rows) {
     try {
       job.status='importing'; renderImportJobs();
       const saved = await api('POST','/api/subcontractors',{...row, division_nums:[state.divisions[0]?.num || '01'], database_ids: state.selectedDatabaseIds, skip_geocode: true});
-      job.subId=saved._id; job.status='geocoding'; renderImportJobs();
-      await api('POST',`/api/subcontractors/${saved._id}/geocode`);
+      job.subId=saved._id; job.db = saved._db || job.db; job.status='geocoding'; renderImportJobs();
+      const geo = await api('POST',`/api/subcontractors/${saved._id}/geocode`, { _db: job.db });
+      job.lat = geo.lat || '';
+      job.lng = geo.lng || '';
       job.status='complete';
     } catch (err) {
-      job.status=`failed: ${err.message}`;
+      job.status='failed';
+      job.error = err.message;
     }
     renderImportJobs();
   }
@@ -2313,6 +2324,35 @@ function renderImportJobs() {
   if (!el) return;
   if (!state.importJobs.length) { el.classList.add('hidden'); el.innerHTML=''; return; }
   el.classList.remove('hidden');
-  el.innerHTML = state.importJobs.map((j) => `<div class="import-job-row ${j.status==='complete'?'is-complete':''}"><strong>${escHtml(j.company_name)}</strong> — ${escHtml(j.status)} ${j.status.startsWith('failed')&&j.subId?`<button data-manual-coords="${j.subId}" class="btn btn-ghost btn-sm">Set Coords</button>`:''}</div>`).join('');
-  el.querySelectorAll('[data-manual-coords]').forEach((b)=>b.addEventListener('click',()=>openManualCoordsModal(b.dataset.manualCoords,{reason:'Paste coordinates for failed geocode'})));
+  const header = `<div class="import-job-row"><div class="cell"><strong>Company</strong></div><div class="cell"><strong>Contact</strong></div><div class="cell"><strong>Address</strong></div><div class="cell"><strong>Phone</strong></div><div class="cell"><strong>Email</strong></div><div class="cell"><strong>Labor</strong></div><div class="cell"><strong>Status</strong></div><div class="cell"><strong>Coords</strong></div></div>`;
+  const rowsHtml = state.importJobs.map((j) => `
+    <div class="import-job-row ${j.status==='complete'?'is-complete':''}">
+      <div class="cell"><strong>${escHtml(j.company_name || '')}</strong></div>
+      <div class="cell">${escHtml(j.contact_name || '')}</div>
+      <div class="cell">${escHtml([j.address, j.city, j.state, j.zip].filter(Boolean).join(', '))}</div>
+      <div class="cell">${escHtml(j.contact_phone || '')}</div>
+      <div class="cell">${escHtml(j.contact_email || '')}</div>
+      <div class="cell">${escHtml(j.labor_type || 'unknown')}</div>
+      <div class="cell">${escHtml(j.status)}${j.error ? `: ${escHtml(j.error)}` : ''}</div>
+      <div class="coords">
+        <input data-lat="${j.id}" placeholder="lat" value="${escAttr(j.lat || '')}" />
+        <input data-lng="${j.id}" placeholder="lng" value="${escAttr(j.lng || '')}" />
+        <button class="btn btn-ghost btn-sm" data-save-coords="${j.id}" ${j.subId ? '' : 'disabled'}>Save</button>
+      </div>
+    </div>`).join('');
+  el.innerHTML = header + rowsHtml;
+  el.querySelectorAll('[data-save-coords]').forEach((btn) => btn.addEventListener('click', async () => {
+    const jobId = btn.dataset.saveCoords;
+    const job = state.importJobs.find((x) => x.id === jobId);
+    if (!job?.subId) return;
+    const lat = Number((el.querySelector(`[data-lat="${jobId}"]`)?.value || '').trim());
+    const lng = Number((el.querySelector(`[data-lng="${jobId}"]`)?.value || '').trim());
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    await api('PUT', `/api/subcontractors/${job.subId}`, { lat, lng, _db: job.db });
+    job.lat = lat;
+    job.lng = lng;
+    job.status = 'complete';
+    renderImportJobs();
+    await loadSubs();
+  }));
 }
