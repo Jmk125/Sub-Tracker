@@ -153,19 +153,33 @@ async function geocodeAddress(fullAddress) {
   }
 
   const geoUrl = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(fullAddress)}&limit=1&countrycodes=us`;
-  const geoRes = await fetch(geoUrl, {
-    headers: { 'User-Agent': 'SubTrackerApp/1.0 (construction-internal)' }
-  });
-  const rawBody = await geoRes.text();
   let geoData = null;
-  try {
-    geoData = JSON.parse(rawBody);
-  } catch (err) {
-    throw new Error(`Geocoder returned non-JSON response (HTTP ${geoRes.status})`);
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1200 * attempt));
+    const geoRes = await fetch(geoUrl, {
+      headers: {
+        'User-Agent': 'SubTrackerApp/1.0 (construction-internal; contact=ops@local)',
+        'Accept': 'application/json',
+      }
+    });
+    lastStatus = geoRes.status;
+    const rawBody = await geoRes.text();
+    try {
+      geoData = JSON.parse(rawBody);
+    } catch (err) {
+      if (geoRes.status === 429 || geoRes.status >= 500) continue;
+      throw new Error(`Geocoder returned non-JSON response (HTTP ${geoRes.status})`);
+    }
+    if (!geoRes.ok) {
+      if (geoRes.status === 429 || geoRes.status >= 500) continue;
+      const message = Array.isArray(geoData) ? '' : (geoData?.error || geoData?.message || '');
+      throw new Error(`Geocoder request failed (HTTP ${geoRes.status})${message ? `: ${message}` : ''}`);
+    }
+    break;
   }
-  if (!geoRes.ok) {
-    const message = Array.isArray(geoData) ? '' : (geoData?.error || geoData?.message || '');
-    throw new Error(`Geocoder request failed (HTTP ${geoRes.status})${message ? `: ${message}` : ''}`);
+  if (!geoData) {
+    throw new Error(`Geocoder unavailable after retries (last HTTP ${lastStatus || 'unknown'})`);
   }
 
   if (!Array.isArray(geoData) || geoData.length === 0) {

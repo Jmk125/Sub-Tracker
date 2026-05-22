@@ -2318,12 +2318,17 @@ async function parsePipelineFile(file) {
     contact_phone: (r[7] || '').toString().trim(),
     contact_email: (r[11] || '').toString().trim(),
     labor_type: String(r[17] || '').toLowerCase().includes('non') ? 'non_union' : (String(r[17] || '').toLowerCase().includes('union') ? 'union' : 'unknown'),
-    division_nums: deriveDivisionNumsFromRow(r),
+    division_nums: deriveDivisionNumsFromCodeCell(r[15]),
   })).filter(r => r.company_name);
 }
 
-function deriveDivisionNumsFromRow(row) {
-  const codes = row.map((v) => String(v || '').trim()).filter((v) => /^\d{4,6}$/.test(v));
+function deriveDivisionNumsFromCodeCell(codeCell) {
+  const raw = String(codeCell || '').trim();
+  if (!raw) return [];
+  const codes = raw
+    .split(/[\s,;/|]+/)
+    .map((v) => v.trim())
+    .filter((v) => /^\d{4,6}$/.test(v));
   const divisionSet = new Set();
   codes.forEach((code) => {
     if (/^0+$/.test(code)) return;
