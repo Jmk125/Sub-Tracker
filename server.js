@@ -342,7 +342,7 @@ app.get('/api/subcontractors', (req, res) => {
 
 // ─── API: Add subcontractor ──────────────────────────────────────────────────
 app.post('/api/subcontractors', async (req, res) => {
-  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, contact2_name, contact2_phone, contact2_email, labor_type, notes, database_ids, skip_geocode } = req.body;
+  const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, contact2_name, contact2_phone, contact2_email, labor_type, notes, database_ids, skip_geocode, lat: inputLat, lng: inputLng } = req.body;
   const normalizedDivisionNums = [...new Set((Array.isArray(division_nums) ? division_nums : [division_num]).filter(Boolean))];
   const primaryDivisionNum = normalizedDivisionNums[0];
 
@@ -351,9 +351,11 @@ app.post('/api/subcontractors', async (req, res) => {
   }
 
   // Geocode the address
-  let lat = null, lng = null, county = '';
+  let lat = Number.isFinite(Number(inputLat)) ? Number(inputLat) : null;
+  let lng = Number.isFinite(Number(inputLng)) ? Number(inputLng) : null;
+  let county = '';
   const fullAddress = [address, city, state || 'OH', zip].filter(Boolean).join(', ');
-  if (!skip_geocode && fullAddress.trim()) {
+  if ((lat === null || lng === null) && !skip_geocode && fullAddress.trim()) {
     try {
       const geo = await geocodeAddress(fullAddress);
       lat = geo.lat;

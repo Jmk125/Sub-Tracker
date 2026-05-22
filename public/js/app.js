@@ -2319,7 +2319,14 @@ async function parsePipelineFile(file) {
     contact_email: (r[11] || '').toString().trim(),
     labor_type: String(r[17] || '').toLowerCase().includes('non') ? 'non_union' : (String(r[17] || '').toLowerCase().includes('union') ? 'union' : 'unknown'),
     division_nums: deriveDivisionNumsFromCodeCell(r[15]),
+    lat: parseSpreadsheetCoord(r[21]),
+    lng: parseSpreadsheetCoord(r[22]),
   })).filter(r => r.company_name);
+}
+
+function parseSpreadsheetCoord(value) {
+  const asNum = Number(String(value ?? '').trim());
+  return Number.isFinite(asNum) ? asNum : null;
 }
 
 function deriveDivisionNumsFromCodeCell(codeCell) {
@@ -2344,12 +2351,27 @@ async function processImportQueue(rows) {
     const row=rows[i]; const job=state.importJobs[i];
     try {
       job.status='importing'; renderImportJobs();
-      const saved = await api('POST','/api/subcontractors',{...row, division_nums: row.division_nums?.length ? row.division_nums : [state.divisions[0]?.num || '01'], database_ids: [state.selectedDatabaseIds[0]], skip_geocode: true});
-      job.subId=saved._id; job.db = saved._db || job.db; job.status='geocoding'; renderImportJobs();
-      const geo = await api('POST',`/api/subcontractors/${saved._id}/geocode`, { _db: job.db });
-      job.lat = geo.lat || '';
-      job.lng = geo.lng || '';
-      job.status='complete';
+      const hasCoords = Number.isFinite(row.lat) && Number.isFinite(row.lng);
+      const saved = await api('POST','/api/subcontractors',{
+        ...row,
+        division_nums: row.division_nums?.length ? row.division_nums : [state.divisions[0]?.num || '01'],
+        database_ids: [state.selectedDatabaseIds[0]],
+        skip_geocode: hasCoords,
+        lat: hasCoords ? row.lat : null,
+        lng: hasCoords ? row.lng : null,
+      });
+      job.subId=saved._id; job.db = saved._db || job.db;
+      if (hasCoords) {
+        job.lat = row.lat;
+        job.lng = row.lng;
+        job.status='complete';
+      } else {
+        job.status='geocoding'; renderImportJobs();
+        const geo = await api('POST',`/api/subcontractors/${saved._id}/geocode`, { _db: job.db });
+        job.lat = geo.lat || '';
+        job.lng = geo.lng || '';
+        job.status='complete';
+      }
     } catch (err) {
       job.status='failed';
       job.error = err.message;
