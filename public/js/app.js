@@ -2359,7 +2359,7 @@ function renderImportJobs() {
   if (!el) return;
   if (!state.importJobs.length) { el.classList.add('hidden'); el.innerHTML=''; return; }
   el.classList.remove('hidden');
-  const header = `<div class="import-job-row"><div class="cell"><strong>Company</strong></div><div class="cell"><strong>Contact</strong></div><div class="cell"><strong>Address</strong></div><div class="cell"><strong>Phone</strong></div><div class="cell"><strong>Email</strong></div><div class="cell"><strong>Labor</strong></div><div class="cell"><strong>Status</strong></div><div class="cell"><strong>Coords</strong></div></div>`;
+  const header = `<div class="import-job-row"><div class="cell"><strong>Company</strong></div><div class="cell"><strong>Contact</strong></div><div class="cell"><strong>Address</strong></div><div class="cell"><strong>Phone</strong></div><div class="cell"><strong>Email</strong></div><div class="cell"><strong>Divisions</strong></div><div class="cell"><strong>Status</strong></div><div class="cell"><strong>Coords / Save</strong></div></div>`;
   const rowsHtml = state.importJobs.map((j) => `
     <div class="import-job-row ${j.status==='complete'?'is-complete':''}">
       <div class="cell"><strong>${escHtml(j.company_name || '')}</strong></div>
@@ -2367,11 +2367,14 @@ function renderImportJobs() {
       <div class="cell">${escHtml([j.address, j.city, j.state, j.zip].filter(Boolean).join(', '))}</div>
       <div class="cell">${escHtml(j.contact_phone || '')}</div>
       <div class="cell">${escHtml(j.contact_email || '')}</div>
-      <div class="cell">${escHtml((j.division_nums || []).join(', ') || '—')} / ${escHtml(j.labor_type || 'unknown')}</div>
+      <div class="cell">
+        <input data-divisions="${j.id}" placeholder="e.g. 03A, 26" value="${escAttr((j.division_nums || []).join(', '))}" />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">${escHtml(j.labor_type || 'unknown')}</div>
+      </div>
       <div class="cell">${escHtml(j.status)}${j.error ? `: ${escHtml(j.error)}` : ''}</div>
       <div class="coords">
         <input data-coords="${j.id}" placeholder="lat, lng" value="${escAttr((j.lat && j.lng) ? `${j.lat}, ${j.lng}` : '')}" />
-        <button class="btn btn-ghost btn-sm" data-save-coords="${j.id}" ${j.subId ? '' : 'disabled'}>Save</button>
+        <button class="btn btn-ghost btn-sm" data-save-coords="${j.id}" ${j.subId ? '' : 'disabled'}>Save Row</button>
       </div>
     </div>`).join('');
   el.innerHTML = header + rowsHtml;
@@ -2379,12 +2382,28 @@ function renderImportJobs() {
     const jobId = btn.dataset.saveCoords;
     const job = state.importJobs.find((x) => x.id === jobId);
     if (!job?.subId) return;
+    const divisionsRaw = (el.querySelector(`[data-divisions="${jobId}"]`)?.value || '').trim();
+    const editedDivisions = divisionsRaw
+      .split(',')
+      .map((d) => d.trim().toUpperCase())
+      .filter(Boolean);
+    if (editedDivisions.length) {
+      job.division_nums = [...new Set(editedDivisions)];
+    }
     const coordsRaw = (el.querySelector(`[data-coords="${jobId}"]`)?.value || '').trim();
     const [lat, lng] = parseLatLng(coordsRaw);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    await api('PUT', `/api/subcontractors/${job.subId}`, { lat, lng, _db: job.db });
-    job.lat = lat;
-    job.lng = lng;
+    const payload = {
+      _db: job.db,
+      division_nums: job.division_nums?.length ? job.division_nums : [state.divisions[0]?.num || '01'],
+      division_num: (job.division_nums?.[0] || state.divisions[0]?.num || '01'),
+    };
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      payload.lat = lat;
+      payload.lng = lng;
+      job.lat = lat;
+      job.lng = lng;
+    }
+    await api('PUT', `/api/subcontractors/${job.subId}`, payload);
     job.status = 'complete';
     renderImportJobs();
     await loadSubs();

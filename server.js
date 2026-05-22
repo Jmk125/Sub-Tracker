@@ -156,7 +156,17 @@ async function geocodeAddress(fullAddress) {
   const geoRes = await fetch(geoUrl, {
     headers: { 'User-Agent': 'SubTrackerApp/1.0 (construction-internal)' }
   });
-  const geoData = await geoRes.json();
+  const rawBody = await geoRes.text();
+  let geoData = null;
+  try {
+    geoData = JSON.parse(rawBody);
+  } catch (err) {
+    throw new Error(`Geocoder returned non-JSON response (HTTP ${geoRes.status})`);
+  }
+  if (!geoRes.ok) {
+    const message = Array.isArray(geoData) ? '' : (geoData?.error || geoData?.message || '');
+    throw new Error(`Geocoder request failed (HTTP ${geoRes.status})${message ? `: ${message}` : ''}`);
+  }
 
   if (!Array.isArray(geoData) || geoData.length === 0) {
     return { lat: null, lng: null, county: '' };
