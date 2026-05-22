@@ -47,7 +47,6 @@ function dbFileFromName(name) { return `${name}.db`; }
 
 function listDatabaseNames() {
   const files = fs.readdirSync(DATA_DIR).filter((f) => f.toLowerCase().endsWith('.db')).sort((a,b)=>a.localeCompare(b));
-  if (!files.includes('subcontractors.db')) files.unshift('subcontractors.db');
   return [...new Set(files)].map(dbNameFromFile);
 }
 
@@ -68,7 +67,6 @@ function getSelectedDbNames(input) {
   return valid;
 }
 
-const db = getDatabaseHandle('subcontractors');
 
 // CSI MasterFormat Divisions
 const CSI_DIVISIONS = [

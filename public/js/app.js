@@ -6,7 +6,7 @@
 const state = {
   subs: [],
   divisions: [],
-  filter: { divisions: [], search: '', notesSearch: '', mapSearch: '', mapNotesSearch: '', divisionMode: 'all' },
+  filter: { divisions: [], search: '', notesSearch: '', mapSearch: '', mapNotesSearch: '', divisionMode: 'all', onlyUngeocoded: false },
   sort: { field: 'company_name', dir: 1 },
   editingId: null,
   pendingDeleteId: null,
@@ -150,7 +150,7 @@ async function loadSubs() {
 
 async function loadDatabases() {
   state.databases = await api('GET', '/api/databases');
-  if (!state.selectedDatabaseIds.length) state.selectedDatabaseIds = state.databases.filter(d => d.active !== false).map(d => d.id);
+  if (!state.selectedDatabaseIds.length) state.selectedDatabaseIds = state.databases[0] ? [state.databases[0].id] : [];
   renderDatabaseMenu();
   await loadSubs();
 }
@@ -219,6 +219,20 @@ function resetAllFilters() {
 
 // ── Filters & Sort ─────────────────────────────────────────
 function setupFilters() {
+  const databaseFilter = document.getElementById('databaseSelector');
+  if (databaseFilter) {
+    let closeTimer = null;
+    const scheduleClose = () => {
+      if (closeTimer) clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => {
+        if (!databaseFilter.matches(':hover')) databaseFilter.open = false;
+      }, 120);
+    };
+    const cancelClose = () => closeTimer && clearTimeout(closeTimer);
+    databaseFilter.addEventListener('mouseenter', cancelClose);
+    databaseFilter.addEventListener('mouseleave', scheduleClose);
+  }
+
   const divisionFilter = document.getElementById('globalDivisionFilter');
   if (divisionFilter) {
     let closeTimer = null;
@@ -300,6 +314,11 @@ function setupFilters() {
     sortDirBtn.textContent = state.sort.dir === 1 ? '↑' : '↓';
     renderList();
   });
+
+  document.getElementById('onlyUngeocoded')?.addEventListener('change', (e) => {
+    state.filter.onlyUngeocoded = !!e.target.checked;
+    renderList();
+  });
 }
 
 // ── Filter Subs ────────────────────────────────────────────
@@ -325,6 +344,9 @@ function getFilteredSubs() {
   if (state.filter.notesSearch) {
     const notesQuery = state.filter.notesSearch;
     list = list.filter((s) => (s.notes || '').toLowerCase().includes(notesQuery));
+  }
+  if (state.filter.onlyUngeocoded) {
+    list = list.filter((s) => !(Number.isFinite(s.lat) && Number.isFinite(s.lng)));
   }
 
   // Sort
@@ -2296,7 +2318,20 @@ async function parsePipelineFile(file) {
     contact_phone: (r[7] || '').toString().trim(),
     contact_email: (r[11] || '').toString().trim(),
     labor_type: String(r[17] || '').toLowerCase().includes('non') ? 'non_union' : (String(r[17] || '').toLowerCase().includes('union') ? 'union' : 'unknown'),
+    division_nums: deriveDivisionNumsFromRow(r),
   })).filter(r => r.company_name);
+}
+
+function deriveDivisionNumsFromRow(row) {
+  const codes = row.map((v) => String(v || '').trim()).filter((v) => /^\d{4,6}$/.test(v));
+  const divisionSet = new Set();
+  codes.forEach((code) => {
+    if (/^0+$/.test(code)) return;
+    const normalized = code.startsWith('00') ? code.slice(2) : code;
+    const division = normalized.slice(0, 2);
+    if (/^\d{2}$/.test(division) && division !== '00') divisionSet.add(division);
+  });
+  return [...divisionSet];
 }
 
 async function processImportQueue(rows) {
@@ -2304,7 +2339,7 @@ async function processImportQueue(rows) {
     const row=rows[i]; const job=state.importJobs[i];
     try {
       job.status='importing'; renderImportJobs();
-      const saved = await api('POST','/api/subcontractors',{...row, division_nums:[state.divisions[0]?.num || '01'], database_ids: state.selectedDatabaseIds, skip_geocode: true});
+      const saved = await api('POST','/api/subcontractors',{...row, division_nums: row.division_nums?.length ? row.division_nums : [state.divisions[0]?.num || '01'], database_ids: [state.selectedDatabaseIds[0]], skip_geocode: true});
       job.subId=saved._id; job.db = saved._db || job.db; job.status='geocoding'; renderImportJobs();
       const geo = await api('POST',`/api/subcontractors/${saved._id}/geocode`, { _db: job.db });
       job.lat = geo.lat || '';
@@ -2332,11 +2367,10 @@ function renderImportJobs() {
       <div class="cell">${escHtml([j.address, j.city, j.state, j.zip].filter(Boolean).join(', '))}</div>
       <div class="cell">${escHtml(j.contact_phone || '')}</div>
       <div class="cell">${escHtml(j.contact_email || '')}</div>
-      <div class="cell">${escHtml(j.labor_type || 'unknown')}</div>
+      <div class="cell">${escHtml((j.division_nums || []).join(', ') || '—')} / ${escHtml(j.labor_type || 'unknown')}</div>
       <div class="cell">${escHtml(j.status)}${j.error ? `: ${escHtml(j.error)}` : ''}</div>
       <div class="coords">
-        <input data-lat="${j.id}" placeholder="lat" value="${escAttr(j.lat || '')}" />
-        <input data-lng="${j.id}" placeholder="lng" value="${escAttr(j.lng || '')}" />
+        <input data-coords="${j.id}" placeholder="lat, lng" value="${escAttr((j.lat && j.lng) ? `${j.lat}, ${j.lng}` : '')}" />
         <button class="btn btn-ghost btn-sm" data-save-coords="${j.id}" ${j.subId ? '' : 'disabled'}>Save</button>
       </div>
     </div>`).join('');
@@ -2345,8 +2379,8 @@ function renderImportJobs() {
     const jobId = btn.dataset.saveCoords;
     const job = state.importJobs.find((x) => x.id === jobId);
     if (!job?.subId) return;
-    const lat = Number((el.querySelector(`[data-lat="${jobId}"]`)?.value || '').trim());
-    const lng = Number((el.querySelector(`[data-lng="${jobId}"]`)?.value || '').trim());
+    const coordsRaw = (el.querySelector(`[data-coords="${jobId}"]`)?.value || '').trim();
+    const [lat, lng] = parseLatLng(coordsRaw);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     await api('PUT', `/api/subcontractors/${job.subId}`, { lat, lng, _db: job.db });
     job.lat = lat;
