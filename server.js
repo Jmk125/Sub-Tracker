@@ -156,7 +156,7 @@ async function geocodeAddress(fullAddress) {
   let geoData = null;
   let lastStatus = 0;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 1200 * attempt));
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
     const geoRes = await fetch(geoUrl, {
       headers: {
         'User-Agent': 'SubTrackerApp/1.0 (construction-internal; contact=ops@local)',
@@ -165,14 +165,26 @@ async function geocodeAddress(fullAddress) {
     });
     lastStatus = geoRes.status;
     const rawBody = await geoRes.text();
+    const retryAfterRaw = geoRes.headers.get('retry-after');
+    const retryAfterSeconds = Number.parseInt(String(retryAfterRaw || ''), 10);
+    const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds * 1000
+      : 8000;
+
     try {
       geoData = JSON.parse(rawBody);
     } catch (err) {
-      if (geoRes.status === 429 || geoRes.status >= 500) continue;
+      if (geoRes.status === 429 || geoRes.status >= 500) {
+        await new Promise((r) => setTimeout(r, retryAfterMs));
+        continue;
+      }
       throw new Error(`Geocoder returned non-JSON response (HTTP ${geoRes.status})`);
     }
     if (!geoRes.ok) {
-      if (geoRes.status === 429 || geoRes.status >= 500) continue;
+      if (geoRes.status === 429 || geoRes.status >= 500) {
+        await new Promise((r) => setTimeout(r, retryAfterMs));
+        continue;
+      }
       const message = Array.isArray(geoData) ? '' : (geoData?.error || geoData?.message || '');
       throw new Error(`Geocoder request failed (HTTP ${geoRes.status})${message ? `: ${message}` : ''}`);
     }
