@@ -355,6 +355,7 @@ app.post('/api/subcontractors', async (req, res) => {
     lat,
     lng,
     county,
+    database_ids: Array.isArray(database_ids) && database_ids.length ? database_ids : ['default'],
     created_at: new Date().toISOString()
   };
 
