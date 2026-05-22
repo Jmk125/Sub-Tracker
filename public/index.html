@@ -23,6 +23,10 @@
           <span class="logo-tag">CMR</span>
           <div class="header-titles">
             <h1>Sub Database</h1>
+            <details id="databaseSelector" class="division-filter-dropdown database-selector">
+              <summary id="databaseSelectorSummary">Database: Default</summary>
+              <div id="databaseSelectorMenu" class="division-filter-menu"></div>
+            </details>
           </div>
         </div>
         <div class="header-controls">
@@ -190,8 +194,11 @@
         <p class="export-copy">Add as many cards as needed, then drag/drop quote PDFs onto each card to auto-fill fields with AI.</p>
         <div class="batch-toolbar">
           <button id="btnBatchAddCard" class="btn btn-primary btn-sm">+ Add Card</button>
+          <label class="btn btn-ghost btn-sm" for="batchImportFile">⇪ Import File</label>
+          <input id="batchImportFile" type="file" accept=",.csv,.xls,.xlsx" hidden />
           <button id="btnBatchClearCards" class="btn btn-ghost btn-sm">Clear All Cards</button>
         </div>
+        <div id="batchImportStatus" class="batch-import-status hidden"></div>
         <div id="batchCardGrid" class="batch-card-grid"></div>
       </div>
     </div>
