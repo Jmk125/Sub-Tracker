@@ -9,7 +9,9 @@ const state = {
   filter: { divisions: [], search: '', notesSearch: '', mapSearch: '', mapNotesSearch: '', divisionMode: 'all', onlyUngeocoded: false },
   sort: { field: 'company_name', dir: 1 },
   editingId: null,
+  editingDb: null,
   pendingDeleteId: null,
+  pendingDeleteDb: null,
   mapReady: false,
   mapLeaflet: null,
   mapLayerGroup: null,
@@ -872,6 +874,7 @@ function openEditModal(id) {
   const sub = state.subs.find(s => s._id === id);
   if (!sub) return;
   state.editingId = id;
+  state.editingDb = sub._db || null;
   document.getElementById('modalTitle').textContent = 'Edit Subcontractor';
   document.getElementById('fCompanyName').value = sub.company_name || '';
   setDivisionSelections(getSubDivisionNums(sub));
@@ -909,6 +912,7 @@ function clearForm() {
 function closeModal() {
   document.getElementById('modal').classList.add('hidden');
   state.editingId = null;
+  state.editingDb = null;
 }
 
 async function saveModal() {
@@ -946,7 +950,7 @@ async function saveModal() {
   try {
     let savedDoc;
     if (state.editingId) {
-      savedDoc = await api('PUT', `/api/subcontractors/${state.editingId}`, payload);
+      savedDoc = await api('PUT', `/api/subcontractors/${state.editingId}`, { ...payload, _db: state.editingDb || undefined });
     } else {
       savedDoc = await api('POST', '/api/subcontractors', payload);
     }
@@ -1416,8 +1420,10 @@ function setupConfirmModal() {
   });
   document.getElementById('confirmDelete').addEventListener('click', async () => {
     if (!state.pendingDeleteId) return;
-    await api('DELETE', `/api/subcontractors/${state.pendingDeleteId}`);
+    const dbQs = state.pendingDeleteDb ? `?_db=${encodeURIComponent(state.pendingDeleteDb)}` : '';
+    await api('DELETE', `/api/subcontractors/${state.pendingDeleteId}${dbQs}`);
     state.pendingDeleteId = null;
+    state.pendingDeleteDb = null;
     document.getElementById('confirmModal').classList.add('hidden');
     await loadSubs();
   });
@@ -1426,6 +1432,7 @@ function setupConfirmModal() {
 function openConfirm(id) {
   const sub = state.subs.find(s => s._id === id);
   state.pendingDeleteId = id;
+  state.pendingDeleteDb = sub?._db || null;
   document.getElementById('confirmMsg').textContent =
     `Delete "${sub ? sub.company_name : 'this subcontractor'}"? This cannot be undone.`;
   document.getElementById('confirmModal').classList.remove('hidden');
@@ -1434,7 +1441,8 @@ function openConfirm(id) {
 // ── Retry Geocode ──────────────────────────────────────────
 async function retryGeocode(id) {
   try {
-    const result = await api('POST', `/api/subcontractors/${id}/geocode`);
+    const sub = state.subs.find((s) => s._id === id);
+    const result = await api('POST', `/api/subcontractors/${id}/geocode`, { _db: sub?._db });
     await loadSubs();
     if (!(result.lat && result.lng)) {
       openManualCoordsModal(id, { reason: 'Geocoding did not return coordinates.' });
@@ -1486,7 +1494,8 @@ async function saveManualCoords() {
 
   document.getElementById('manualCoordsSave').disabled = true;
   try {
-    await api('PUT', `/api/subcontractors/${state.manualCoordsId}`, { lat, lng });
+    const sub = state.subs.find((s) => s._id === state.manualCoordsId);
+    await api('PUT', `/api/subcontractors/${state.manualCoordsId}`, { lat, lng, _db: sub?._db });
     await loadSubs();
     closeManualCoordsModal(false);
   } catch (e) {
