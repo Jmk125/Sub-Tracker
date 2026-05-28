@@ -203,6 +203,10 @@
           <label class="btn btn-ghost btn-sm" for="batchImportFile">⇪ Import File</label>
           <input id="batchImportFile" type="file" accept=",.csv,.xls,.xlsx" hidden />
           <button id="btnBatchClearCards" class="btn btn-ghost btn-sm">Clear All Cards</button>
+          <label id="batchDatabaseTargetWrap" class="database-target-control hidden">
+            <span>Save to database</span>
+            <select id="batchDatabaseTarget"></select>
+          </label>
         </div>
         <div id="batchImportStatus" class="batch-import-status hidden"></div>
         <div id="batchCardGrid" class="batch-card-grid"></div>
@@ -220,6 +224,15 @@
       </div>
       <div class="modal-body">
         <div class="form-grid">
+          <div id="modalDatabaseTargetGroup" class="form-group full hidden">
+            <label for="modalDatabaseTarget">Save to database</label>
+            <select id="modalDatabaseTarget"></select>
+          </div>
+          <div id="quoteScanGroup" class="form-group full quote-scan-group">
+            <label>Quote AI Scan</label>
+            <div id="quoteScanDropzone" class="batch-dropzone quote-scan-dropzone">Drag & drop quote PDF to auto-fill this form</div>
+            <div id="quoteScanStatus" class="batch-status"></div>
+          </div>
           <div class="form-group full">
             <label>Company Name <span class="req">*</span></label>
             <input type="text" id="fCompanyName" placeholder="e.g. Apex Electrical LLC" />
