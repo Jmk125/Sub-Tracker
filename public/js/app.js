@@ -173,6 +173,8 @@ function renderDatabaseMenu() {
   menu.appendChild(controls);
   const selectedNames = state.databases.filter(d => state.selectedDatabaseIds.includes(d.id)).map(d => d.name);
   summary.textContent = selectedNames.length ? `Database: ${selectedNames.join(', ')}` : 'Database: None';
+  updateBatchDatabaseTargetUi();
+  updateModalDatabaseTargetUi();
 
   menu.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', async () => {
     state.selectedDatabaseIds = [...menu.querySelectorAll('input[type="checkbox"]:checked')].map(i => i.value);
@@ -182,6 +184,62 @@ function renderDatabaseMenu() {
   document.getElementById('btnAddDatabase')?.addEventListener('click', () => openDatabaseModal('add'));
   document.getElementById('btnDeleteDatabase')?.addEventListener('click', () => openDatabaseModal('delete'));
 }
+
+function getViewedDatabaseIds() {
+  return state.selectedDatabaseIds.length
+    ? state.selectedDatabaseIds
+    : state.databases.map((db) => db.id);
+}
+
+function getDefaultTargetDatabaseId() {
+  const viewed = getViewedDatabaseIds();
+  return viewed[0] || state.databases[0]?.id || 'subcontractors';
+}
+
+function populateDatabaseTargetSelect(selectEl, selectedId = getDefaultTargetDatabaseId()) {
+  if (!selectEl) return;
+  const viewed = getViewedDatabaseIds();
+  const options = (viewed.length ? viewed : state.databases.map((db) => db.id))
+    .map((id) => state.databases.find((db) => db.id === id))
+    .filter(Boolean);
+  const selectedOptionId = options.some((db) => db.id === selectedId)
+    ? selectedId
+    : (options[0]?.id || 'subcontractors');
+  selectEl.innerHTML = options.map((db) => `
+    <option value="${escAttr(db.id)}" ${db.id === selectedOptionId ? 'selected' : ''}>${escHtml(db.name)}</option>
+  `).join('');
+}
+
+function updateBatchDatabaseTargetUi() {
+  const wrap = document.getElementById('batchDatabaseTargetWrap');
+  const select = document.getElementById('batchDatabaseTarget');
+  if (!wrap || !select) return;
+  const viewed = getViewedDatabaseIds();
+  const showSelector = viewed.length > 1;
+  wrap.classList.toggle('hidden', !showSelector);
+  populateDatabaseTargetSelect(select, select.value || getDefaultTargetDatabaseId());
+}
+
+function updateModalDatabaseTargetUi() {
+  const group = document.getElementById('modalDatabaseTargetGroup');
+  const select = document.getElementById('modalDatabaseTarget');
+  if (!group || !select) return;
+  const isAdding = !state.editingId;
+  const showSelector = isAdding && getViewedDatabaseIds().length > 1;
+  group.classList.toggle('hidden', !showSelector);
+  if (isAdding) populateDatabaseTargetSelect(select, select.value || getDefaultTargetDatabaseId());
+}
+
+function getBatchTargetDatabaseId() {
+  const select = document.getElementById('batchDatabaseTarget');
+  return (getViewedDatabaseIds().length > 1 && select?.value) ? select.value : getDefaultTargetDatabaseId();
+}
+
+function getModalTargetDatabaseId() {
+  const select = document.getElementById('modalDatabaseTarget');
+  return (getViewedDatabaseIds().length > 1 && select?.value) ? select.value : getDefaultTargetDatabaseId();
+}
+
 // ── Tabs ───────────────────────────────────────────────────
 function setupTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
@@ -665,6 +723,75 @@ function setupModal() {
   setupPhoneFormatting();
   setupLaborTypeInputs();
   setupManualCoordsModal();
+  setupQuoteScanDropzone();
+}
+
+
+function setupQuoteScanDropzone() {
+  const zone = document.getElementById('quoteScanDropzone');
+  if (!zone) return;
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    zone.classList.add('active');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('active'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('active');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) scanModalQuotePdf(file);
+  });
+}
+
+function applyParsedQuoteFieldsToModal(fields = {}) {
+  const fieldMap = {
+    company_name: 'fCompanyName',
+    contact_name: 'fContactName',
+    contact_phone: 'fContactPhone',
+    contact_email: 'fContactEmail',
+    website: 'fWebsite',
+    address: 'fAddress',
+    city: 'fCity',
+    state: 'fState',
+    zip: 'fZip',
+    notes: 'fNotes',
+  };
+  Object.entries(fieldMap).forEach(([field, id]) => {
+    const el = document.getElementById(id);
+    const value = fields[field];
+    if (!el || typeof value !== 'string' || !value.trim()) return;
+    el.value = field === 'contact_phone' ? formatPhoneInput(value.trim()) : value.trim();
+  });
+  const websiteInput = document.getElementById('fWebsite');
+  if (websiteInput) {
+    websiteInput.value = cleanWebsiteValue(websiteInput.value);
+    if (websiteInput.value.includes('@')) websiteInput.value = '';
+  }
+  const aiDivisions = Array.isArray(fields.division_nums)
+    ? fields.division_nums.map((d) => String(d || '').trim()).filter(Boolean)
+    : [];
+  if (aiDivisions.length) {
+    setDivisionSelections([...new Set(aiDivisions)]);
+  } else if (typeof fields.division_num === 'string' && fields.division_num.trim()) {
+    setDivisionSelections([fields.division_num.trim()]);
+  }
+}
+
+async function scanModalQuotePdf(file) {
+  const statusEl = document.getElementById('quoteScanStatus');
+  if (!statusEl) return;
+  statusEl.textContent = '⏳ Scanning PDF with AI...';
+  const formData = new FormData();
+  formData.append('quotePdf', file);
+  try {
+    const res = await fetch('/api/ai/parse-quote', { method: 'POST', body: formData });
+    const data = await parseJsonResponseSafe(res);
+    if (!res.ok) throw new Error(data.error || 'AI parsing failed');
+    applyParsedQuoteFieldsToModal(data.fields || {});
+    statusEl.textContent = '✅ AI fields inserted. Review and save.';
+  } catch (err) {
+    statusEl.textContent = `❌ ${err.message}`;
+  }
 }
 
 function setupBatchModal() {
@@ -675,10 +802,11 @@ function setupBatchModal() {
     modal.classList.add('hidden');
   };
   document.getElementById('btnBatchAddSubs').addEventListener('click', () => {
+    updateBatchDatabaseTargetUi();
     modal.classList.remove('hidden');
     if (!state.batchCards.length) addBatchCard();
-  document.getElementById('batchImportFile')?.addEventListener('change', handleBatchImportFile);
   });
+  document.getElementById('batchImportFile')?.addEventListener('change', handleBatchImportFile);
   document.getElementById('batchModalClose').addEventListener('click', closeBatchModal);
   modal.querySelector('.modal-backdrop').addEventListener('click', closeBatchModal);
   document.getElementById('btnBatchAddCard').addEventListener('click', addBatchCard);
@@ -690,7 +818,7 @@ function setupBatchModal() {
 
 function addBatchCard() {
   const id = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-  state.batchCards.push({ id, status: 'Drop quote PDF here', savedId: null, dirty: false, isSaving: false, fields: { state: 'OH' }, division_nums: [state.divisions[0]?.num || ''] });
+  state.batchCards.push({ id, status: 'Drop quote PDF here', savedId: null, savedDb: null, dirty: false, isSaving: false, fields: { state: 'OH' }, division_nums: [state.divisions[0]?.num || ''] });
   renderBatchCards();
 }
 
@@ -833,6 +961,9 @@ async function saveBatchCard(cardId) {
   payload.division_nums = [...new Set((cardState.division_nums || []).filter(Boolean))];
   payload.division_num = payload.division_nums[0];
   payload.labor_type = 'unknown';
+  const targetDb = cardState.savedDb || getBatchTargetDatabaseId();
+  if (cardState.savedId) payload._db = targetDb;
+  else payload.database_ids = [targetDb];
   if (!payload.company_name || !payload.division_num) {
     statusEl.textContent = '❌ Company + Division required.';
     return;
@@ -848,6 +979,7 @@ async function saveBatchCard(cardId) {
       ? await api('PUT', `/api/subcontractors/${cardState.savedId}`, payload)
       : await api('POST', '/api/subcontractors', payload);
     cardState.savedId = saved?._id || cardState.savedId;
+    cardState.savedDb = saved?._db || targetDb;
     if (!(saved?.lat && saved?.lng)) {
       await promptForManualCoordsOrSkip(saved?._id || cardState.savedId, 'We could not geocode that address. Paste coordinates or skip geocoding.');
     }
@@ -866,6 +998,7 @@ function openAddModal() {
   state.editingId = null;
   document.getElementById('modalTitle').textContent = 'Add Subcontractor';
   clearForm();
+  updateModalDatabaseTargetUi();
   document.getElementById('modal').classList.remove('hidden');
   document.getElementById('fCompanyName').focus();
 }
@@ -876,6 +1009,7 @@ function openEditModal(id) {
   state.editingId = id;
   state.editingDb = sub._db || null;
   document.getElementById('modalTitle').textContent = 'Edit Subcontractor';
+  updateModalDatabaseTargetUi();
   document.getElementById('fCompanyName').value = sub.company_name || '';
   setDivisionSelections(getSubDivisionNums(sub));
   document.getElementById('fAddress').value = sub.address || '';
@@ -907,7 +1041,10 @@ function clearForm() {
   setLaborType('unknown');
   clearAddressFieldHighlights();
   hideGeoStatus();
+  const quoteStatus = document.getElementById('quoteScanStatus');
+  if (quoteStatus) quoteStatus.textContent = '';
 }
+
 
 function closeModal() {
   document.getElementById('modal').classList.add('hidden');
@@ -952,7 +1089,7 @@ async function saveModal() {
     if (state.editingId) {
       savedDoc = await api('PUT', `/api/subcontractors/${state.editingId}`, { ...payload, _db: state.editingDb || undefined });
     } else {
-      savedDoc = await api('POST', '/api/subcontractors', payload);
+      savedDoc = await api('POST', '/api/subcontractors', { ...payload, database_ids: [getModalTargetDatabaseId()] });
     }
     await loadSubs();
     closeModal();

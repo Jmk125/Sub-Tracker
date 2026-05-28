@@ -1251,7 +1251,7 @@ select {
 
 .batch-modal-box { width: min(1800px, 99vw); max-height: 96vh; }
 .batch-modal-body { max-height: 90vh; overflow-y: auto; }
-.batch-toolbar { display:flex; gap:8px; margin: 10px 0 14px; }
+.batch-toolbar { display:flex; gap:8px; margin: 10px 0 14px; flex-wrap: wrap; align-items: center; }
 .batch-card-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
 .batch-card { border:1px solid var(--border2); background:var(--bg3); border-radius:var(--radius); padding:10px; display:flex; flex-direction:column; gap:8px; }
 .batch-card-head { display:flex; justify-content:space-between; align-items:center; }
@@ -1259,6 +1259,9 @@ select {
 .batch-division-rows { display:flex; flex-direction:column; gap:6px; }
 .batch-division-row { display:grid; grid-template-columns: 1fr auto; gap:6px; align-items:center; }
 .batch-dropzone { border:1px dashed var(--accent2); border-radius:var(--radius); padding:10px; text-align:center; color:var(--text-dim); }
+.quote-scan-dropzone { padding: 14px; background: rgba(59, 125, 216, 0.08); }
+.database-target-control { display:flex; align-items:center; gap:8px; margin-left:auto; color:var(--text-dim); font-size:12px; }
+.database-target-control select, #modalDatabaseTarget { min-width:190px; padding:6px 8px; border:1px solid var(--border2); background:var(--bg); color:var(--text); border-radius:var(--radius); }
 .batch-dropzone.active { border-color: var(--accent); color: var(--accent); }
 .batch-status { min-height: 18px; font-size: 12px; color: var(--text-dim); }
 .batch-save-disabled { opacity: 0.6; cursor: not-allowed; }

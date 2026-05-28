@@ -345,6 +345,8 @@ app.post('/api/subcontractors', async (req, res) => {
   const { company_name, address, website, city, state, zip, division_num, division_nums, division_name, contact_name, contact_phone, contact_email, contact2_name, contact2_phone, contact2_email, labor_type, notes, database_ids, skip_geocode, lat: inputLat, lng: inputLng } = req.body;
   const normalizedDivisionNums = [...new Set((Array.isArray(division_nums) ? division_nums : [division_num]).filter(Boolean))];
   const primaryDivisionNum = normalizedDivisionNums[0];
+  const requestedDbIds = Array.isArray(database_ids) ? database_ids : [];
+  const targetDbName = sanitizeDatabaseName(requestedDbIds[0] || 'subcontractors') || 'subcontractors';
 
   if (!company_name || !primaryDivisionNum) {
     return res.status(400).json({ error: 'Company name and division are required.' });
@@ -393,14 +395,14 @@ app.post('/api/subcontractors', async (req, res) => {
     lat,
     lng,
     county,
-    database_ids: Array.isArray(database_ids) && database_ids.length ? database_ids : ['default'],
+    database_ids: [targetDbName],
     created_at: new Date().toISOString()
   };
 
-  const targetDb = getDatabaseHandle(Array.isArray(database_ids) && database_ids.length ? database_ids[0] : 'subcontractors');
+  const targetDb = getDatabaseHandle(targetDbName);
   targetDb.insert(doc, (err, newDoc) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(newDoc);
+    res.json({ ...newDoc, _db: targetDbName });
   });
 });
 
